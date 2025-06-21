@@ -2,7 +2,7 @@
 
 # =================================================================
 #
-#       一键式服务器监控面板安装/卸载脚本 v2.3 (最终修复版)
+#         一键式服务器监控面板安装/卸载脚本 v2.3 (最终修复版)
 #
 # =================================================================
 
@@ -17,7 +17,7 @@ NC='\033[0m' # No Color
 
 # --- 脚本欢迎信息 ---
 echo -e "${GREEN}=====================================================${NC}"
-echo -e "${GREEN}      欢迎使用服务器监控面板一键安装/卸载脚本      ${NC}"
+echo -e "${GREEN}      欢迎使用服务器监控面板一键安装/卸载脚本       ${NC}"
 echo -e "${GREEN}=====================================================${NC}"
 echo ""
 
@@ -226,7 +226,7 @@ EOF
     sudo systemctl restart nginx
     
     echo -e "${GREEN}=====================================================${NC}"
-    echo -e "${GREEN}          服务端安装成功! 🎉${NC}"
+    echo -e "${GREEN}                 服务端安装成功! 🎉${NC}"
     echo -e "您的监控面板地址: ${YELLOW}https://$DOMAIN${NC}"
     echo -e "请牢记您设置的两种密码！"
     echo -e "现在您可以去需要监控的服务器上，运行此脚本并选择'安装被控端'。"
@@ -285,8 +285,8 @@ RAW_TOTAL_NET_UP=$(cat /sys/class/net/$NET_INTERFACE/statistics/tx_bytes)
 JSON_PAYLOAD=$(cat <<EOF
 {"id":"$SERVER_ID","name":"$SERVER_NAME","location":"$SERVER_LOCATION","os":"$OS","cpu":$CPU_USAGE,"mem":{"total":$MEM_TOTAL,"used":$MEM_USED},"disk":{"total":$DISK_TOTAL,"used":$DISK_USED},"net":{"up":$NET_UP_BPS,"down":$NET_DOWN_BPS},"rawTotalNet":{"up":$RAW_TOTAL_NET_UP,"down":$RAW_TOTAL_NET_DOWN}}
 EOF
-)
-curl -s -X POST -H "Content-Type: application/json" -d "$JSON_PAYLOAD" $BACKEND_URL
+\)
+curl -s -X POST -H "Content-Type: application/json" -d "$JSON_PAYLOAD" "$BACKEND_URL"
 EOF
     sudo chmod +x /opt/monitor-agent/agent.sh
 
@@ -313,7 +313,7 @@ EOF
     sudo systemctl start monitor-agent
     
     echo -e "${GREEN}=====================================================${NC}"
-    echo -e "${GREEN}          被控端Agent安装并启动成功! ✅${NC}"
+    echo -e "${GREEN}            被控端Agent安装并启动成功! ✅${NC}"
     echo -e "现在您可以访问您的监控面板查看这台服务器的状态了。"
     echo -e "${GREEN}=====================================================${NC}"
 }
@@ -340,7 +340,7 @@ uninstall_server() {
     sudo systemctl start nginx
     
     echo -e "${GREEN}=====================================================${NC}"
-    echo -e "${GREEN}          服务端卸载成功! ✅${NC}"
+    echo -e "${GREEN}                 服务端卸载成功! ✅${NC}"
     echo -e "SSL证书文件保留在系统中，您可以使用 'sudo certbot delete --cert-name $DOMAIN' 手动删除。"
     echo -e "${GREEN}=====================================================${NC}"
 }
@@ -363,13 +363,12 @@ uninstall_agent() {
     sudo systemctl daemon-reload
     
     echo -e "${GREEN}=====================================================${NC}"
-    echo -e "${GREEN}          被控端Agent卸载成功! ✅${NC}"
+    echo -e "${GREEN}               被控端Agent卸载成功! ✅${NC}"
     echo -e "请记得到您的监控面板网页端手动删除此服务器。 "
     echo -e "${GREEN}=====================================================${NC}"
 }
 
 # --- 主菜单 ---
-# 已修正: 将case语句重构为多行格式以增强兼容性
 main_menu() {
     echo "请选择要执行的操作:"
     echo "1) 安装服务端 (Frontend + Backend)"
@@ -400,4 +399,5 @@ main_menu() {
 
 # --- 脚本主入口 ---
 main_menu
+
 exit 0
