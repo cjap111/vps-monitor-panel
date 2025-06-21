@@ -2,7 +2,7 @@
 
 # =================================================================
 #
-#          一键式服务器监控面板安装脚本 v1.2
+#          一键式服务器监控面板安装/卸载脚本 v1.3
 #
 # =================================================================
 
@@ -14,7 +14,7 @@ NC='\033[0m' # No Color
 
 # --- 脚本欢迎信息 ---
 echo -e "${GREEN}=====================================================${NC}"
-echo -e "${GREEN}          欢迎使用服务器监控面板一键安装脚本         ${NC}"
+echo -e "${GREEN}      欢迎使用服务器监控面板一键安装/卸载脚本      ${NC}"
 echo -e "${GREEN}=====================================================${NC}"
 echo ""
 
@@ -211,11 +211,93 @@ EOF
     echo -e "${GREEN}=====================================================${NC}"
 }
 
+# --- 函数：卸载服务端 ---
+uninstall_server() {
+    echo -e "${YELLOW}开始卸载服务端...${NC}"
+    read -p "请输入您安装时使用的域名 (例如: monitor.yourdomain.com): " DOMAIN
+    if [ -z "$DOMAIN" ]; then
+        echo -e "${RED}错误：域名不能为空！${NC}"
+        exit 1
+    fi
+
+    echo -e "${RED}警告：此操作将删除所有服务端相关文件和服务，但会保留SSL证书。${NC}"
+    read -p "您确定要继续吗? [y/N]: " CONFIRM
+    if [[ "$CONFIRM" != "y" ]]; then
+        echo "操作已取消。"
+        exit 0
+    fi
+
+    # 1. 停止并禁用后端服务
+    echo "--> 正在停止并禁用后端服务..."
+    sudo systemctl stop monitor-backend.service
+    sudo systemctl disable monitor-backend.service > /dev/null 2>&1
+    
+    # 2. 删除后端文件和服务文件
+    echo "--> 正在删除后端文件..."
+    sudo rm -rf /opt/monitor-backend
+    sudo rm -f /etc/systemd/system/monitor-backend.service
+    
+    # 3. 停止Nginx
+    echo "--> 正在停止Nginx..."
+    sudo systemctl stop nginx
+    
+    # 4. 删除Nginx配置
+    echo "--> 正在删除Nginx配置..."
+    sudo rm -f "/etc/nginx/sites-available/$DOMAIN"
+    sudo rm -f "/etc/nginx/sites-enabled/$DOMAIN"
+    
+    # 5. 删除前端文件
+    echo "--> 正在删除前端文件..."
+    sudo rm -rf /var/www/monitor-frontend
+
+    # 6. 重载Systemd并重启Nginx
+    echo "--> 正在重载服务并重启Nginx..."
+    sudo systemctl daemon-reload
+    sudo systemctl restart nginx
+    
+    echo -e "${GREEN}=====================================================${NC}"
+    echo -e "${GREEN}          服务端卸载成功! ✅${NC}"
+    echo -e "SSL证书文件保留在系统中，您可以使用 'sudo certbot delete --cert-name $DOMAIN' 手动删除。"
+    echo -e "${GREEN}=====================================================${NC}"
+}
+
+# --- 函数：卸载被控端 ---
+uninstall_agent() {
+    echo -e "${YELLOW}开始卸载被控端...${NC}"
+    echo -e "${RED}警告：此操作将停止并删除本服务器上的监控Agent。${NC}"
+    read -p "您确定要继续吗? [y/N]: " CONFIRM
+    if [[ "$CONFIRM" != "y" ]]; then
+        echo "操作已取消。"
+        exit 0
+    fi
+
+    # 1. 停止并禁用Agent服务
+    echo "--> 正在停止并禁用Agent服务..."
+    sudo systemctl stop monitor-agent.service
+    sudo systemctl disable monitor-agent.service > /dev/null 2>&1
+    
+    # 2. 删除Agent文件和服务文件
+    echo "--> 正在删除Agent文件..."
+    sudo rm -rf /opt/monitor-agent
+    sudo rm -f /etc/systemd/system/monitor-agent.service
+    
+    # 3. 重载Systemd
+    echo "--> 正在重载服务..."
+    sudo systemctl daemon-reload
+    
+    echo -e "${GREEN}=====================================================${NC}"
+    echo -e "${GREEN}          被控端Agent卸载成功! ✅${NC}"
+    echo -e "请记得到您的监控面板网页端手动删除此服务器。 "
+    echo -e "${GREEN}=====================================================${NC}"
+}
+
 # --- 主菜单 ---
 echo "请选择要执行的操作:"
 echo "1) 安装服务端 (Frontend + Backend)"
 echo "2) 安装被控端 (Agent)"
-read -p "请输入选项 [1-2]: " choice
+echo -e "${YELLOW}3) 卸载服务端${NC}"
+echo -e "${YELLOW}4) 卸载被控端${NC}"
+read -p "请输入选项 [1-4]: " choice
 
 case $choice in
     1)
@@ -223,6 +305,12 @@ case $choice in
         ;;
     2)
         install_agent
+        ;;
+    3)
+        uninstall_server
+        ;;
+    4)
+        uninstall_agent
         ;;
     *)
         echo -e "${RED}错误：无效的选项！${NC}"
