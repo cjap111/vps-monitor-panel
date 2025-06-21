@@ -2,7 +2,7 @@
 
 # =================================================================
 #
-#         一键式服务器监控面板安装/卸载脚本 v2.3 (最终修复版)
+#         一键式服务器监控面板安装/卸载脚本 v2.4 (最终修复版)
 #
 # =================================================================
 
@@ -275,17 +275,17 @@ MEM_USED=$(echo $MEM_INFO | awk '{print $3}')
 DISK_INFO=$(df -h / | tail -n 1)
 DISK_TOTAL=$(echo $DISK_INFO | awk '{print $2}' | sed 's/G//')
 DISK_USED=$(echo $DISK_INFO | awk '{print $3}' | sed 's/G//')
-NET_STATS=$(sar -n DEV 1 1 | grep "Average:" | grep $NET_INTERFACE || echo "Average: $NET_INTERFACE 0 0 0 0 0 0 0 0")
+NET_STATS=$(sar -n DEV 1 1 | grep "Average:" | grep "$NET_INTERFACE" || echo "Average: $NET_INTERFACE 0 0 0 0 0 0 0 0")
 NET_DOWN_KBPS=$(echo $NET_STATS | awk '{print $5}')
 NET_UP_KBPS=$(echo $NET_STATS | awk '{print $6}')   
 NET_DOWN_BPS=$(echo "$NET_DOWN_KBPS * 1024" | bc)
 NET_UP_BPS=$(echo "$NET_UP_KBPS * 1024" | bc)
-RAW_TOTAL_NET_DOWN=$(cat /sys/class/net/$NET_INTERFACE/statistics/rx_bytes)
-RAW_TOTAL_NET_UP=$(cat /sys/class/net/$NET_INTERFACE/statistics/tx_bytes)
+RAW_TOTAL_NET_DOWN=$(cat /sys/class/net/"$NET_INTERFACE"/statistics/rx_bytes)
+RAW_TOTAL_NET_UP=$(cat /sys/class/net/"$NET_INTERFACE"/statistics/tx_bytes)
 JSON_PAYLOAD=$(cat <<EOF
 {"id":"$SERVER_ID","name":"$SERVER_NAME","location":"$SERVER_LOCATION","os":"$OS","cpu":$CPU_USAGE,"mem":{"total":$MEM_TOTAL,"used":$MEM_USED},"disk":{"total":$DISK_TOTAL,"used":$DISK_USED},"net":{"up":$NET_UP_BPS,"down":$NET_DOWN_BPS},"rawTotalNet":{"up":$RAW_TOTAL_NET_UP,"down":$RAW_TOTAL_NET_DOWN}}
 EOF
-\)
+)
 curl -s -X POST -H "Content-Type: application/json" -d "$JSON_PAYLOAD" "$BACKEND_URL"
 EOF
     sudo chmod +x /opt/monitor-agent/agent.sh
