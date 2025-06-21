@@ -2,7 +2,7 @@
 
 # =================================================================
 #
-#          一键式服务器监控面板安装/卸载脚本 v1.4
+#          一键式服务器监控面板安装/卸载脚本 v1.5 (定制版)
 #
 # =================================================================
 
@@ -88,17 +88,17 @@ EOF
     # 5. 部署前端
     echo "--> 正在部署前端面板..."
     sudo mkdir -p /var/www/monitor-frontend
-    # !! 注意：请将下面的 user/repo 替换为您自己的GitHub用户名和仓库名
-    sudo curl -s -L "https://raw.githubusercontent.com/user/repo/main/frontend/index.html" -o /var/www/monitor-frontend/index.html
+    # 已修正: 将URL替换为您的仓库地址
+    sudo curl -s -L "https://raw.githubusercontent.com/cjap111/vps-monitor-panel/main/frontend/index.html" -o /var/www/monitor-frontend/index.html
     sudo sed -i "s|https://monitor.yourdomain.com/api|https://$DOMAIN/api|g" /var/www/monitor-frontend/index.html
     
     # 6. 部署后端
     echo "--> 正在部署后端API服务..."
     sudo mkdir -p /opt/monitor-backend
     cd /opt/monitor-backend
-    # !! 注意：请将下面的 user/repo 替换为您自己的GitHub用户名和仓库名
-    sudo curl -s -L "https://raw.githubusercontent.com/user/repo/main/backend/server.js" -o server.js
-    sudo curl -s -L "https://raw.githubusercontent.com/user/repo/main/backend/package.json" -o package.json
+    # 已修正: 将URL替换为您的仓库地址
+    sudo curl -s -L "https://raw.githubusercontent.com/cjap111/vps-monitor-panel/main/backend/server.js" -o server.js
+    sudo curl -s -L "https://raw.githubusercontent.com/cjap111/vps-monitor-panel/main/backend/package.json" -o package.json
     sudo npm install
 
     # 7. 创建环境变量文件
@@ -185,8 +185,8 @@ install_agent() {
     # 5. 部署Agent脚本
     echo "--> 正在部署Agent脚本..."
     sudo mkdir -p /opt/monitor-agent
-    # !! 注意：请将下面的 user/repo 替换为您自己的GitHub用户名和仓库名
-    sudo curl -s -L "https://raw.githubusercontent.com/user/repo/main/agent/agent.sh" -o /opt/monitor-agent/agent.sh
+    # 已修正: 将URL替换为您的仓库地址
+    sudo curl -s -L "https://raw.githubusercontent.com/cjap111/vps-monitor-panel/main/agent/agent.sh" -o /opt/monitor-agent/agent.sh
     sudo chmod +x /opt/monitor-agent/agent.sh
 
     # 6. 更新Agent配置
