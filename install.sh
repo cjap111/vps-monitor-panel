@@ -56,7 +56,7 @@ sudo nginx -t
 
     echo "--> 正在部署前端面板..."
     sudo mkdir -p /var/www/monitor-frontend
-    sudo curl -s -L "https://raw.githubusercontent.com/user/repo/main/frontend/index.html" -o /var/www/monitor-frontend/index.html
+    sudo curl -s -L "https://raw.githubusercontent.com/cjap111/vps-monitor-panel/main/frontend/index.html" -o /var/www/monitor-frontend/index.html
     sudo sed -i "s|https://monitor.yourdomain.com/api|https://$DOMAIN/api|g" /var/www/monitor-frontend/index.html
     
     echo "--> 正在部署后端API服务..."
