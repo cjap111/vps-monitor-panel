@@ -2,7 +2,7 @@
 
 # =================================================================
 #
-#          一键式服务器监控面板安装/卸载脚本 v1.3
+#          一键式服务器监控面板安装/卸载脚本 v1.4
 #
 # =================================================================
 
@@ -22,12 +22,18 @@ echo ""
 install_server() {
     echo -e "${YELLOW}开始安装服务端 (前端 + 后端)...${NC}"
     
-    # 1. 更新并安装依赖
-    echo "--> 正在更新软件包并安装依赖 (Nginx, Node.js, Certbot)..."
-    sudo apt-get update > /dev/null 2>&1
-    sudo apt-get install -y nginx nodejs npm certbot python3-certbot-nginx > /dev/null 2>&1
+    # 1. 更新并安装依赖 (已移除静默模式以显示详细日志)
+    echo "--> 正在更新软件包列表..."
+    sudo apt-get update
     if [ $? -ne 0 ]; then
-        echo -e "${RED}错误：依赖安装失败。请检查您的apt源或网络。${NC}"
+        echo -e "${RED}错误：'apt-get update' 失败。请检查您的apt源或网络连接。${NC}"
+        exit 1
+    fi
+
+    echo "--> 正在安装依赖 (Nginx, Node.js, Certbot)..."
+    sudo apt-get install -y nginx nodejs npm certbot python3-certbot-nginx
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}错误：依赖安装失败。请查看上面的错误信息来诊断问题。${NC}"
         exit 1
     fi
 
@@ -93,7 +99,7 @@ EOF
     # !! 注意：请将下面的 user/repo 替换为您自己的GitHub用户名和仓库名
     sudo curl -s -L "https://raw.githubusercontent.com/user/repo/main/backend/server.js" -o server.js
     sudo curl -s -L "https://raw.githubusercontent.com/user/repo/main/backend/package.json" -o package.json
-    sudo npm install > /dev/null 2>&1
+    sudo npm install
 
     # 7. 创建环境变量文件
     echo "--> 正在配置后端环境变量..."
@@ -159,10 +165,14 @@ install_agent() {
     fi
     echo -e "${GREEN}密码验证成功！正在继续安装...${NC}"
 
-    # 3. 安装依赖
+    # 3. 安装依赖 (已移除静默模式)
     echo "--> 正在安装依赖 (sysstat, bc)..."
-    sudo apt-get update > /dev/null 2>&1
-    sudo apt-get install -y sysstat bc > /dev/null 2>&1
+    sudo apt-get update
+    sudo apt-get install -y sysstat bc
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}错误：依赖 'sysstat' 或 'bc' 安装失败。${NC}"
+        exit 1
+    fi
 
     # 4. 获取服务器信息
     read -p "请为当前服务器设置一个唯一的ID (例如: web-server-01): " SERVER_ID
