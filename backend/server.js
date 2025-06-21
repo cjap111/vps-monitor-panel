@@ -18,67 +18,55 @@ app.use(express.json({limit: '1mb'}));
 
 let serverDataStore = {};
 
-// POST /api/report - 已修复潜在的崩溃bug
+// POST /api/report
 app.post('/api/report', (req, res) => {
-    try {
-        const data = req.body;
-        if (!data || !data.id || !data.rawTotalNet) {
-            return res.status(400).send('Invalid data payload.');
-        }
-
-        const now = Date.now();
-        const existingData = serverDataStore[data.id];
-
-        // 使用 console.log 确认数据已到达
-        console.log(`Received report from: ${data.id}`);
-
-        if (!existingData) {
-            // 这是新服务器的第一次上报
-            serverDataStore[data.id] = {
-                ...data,
-                totalNet: { up: 0, down: 0 }, // 累计流量从0开始
-                resetDay: 1,
-                lastReset: `${new Date().getFullYear()}-${new Date().getMonth()}`,
-                startTime: now, // 记录首次上报时间
-                lastUpdated: now,
-            };
-        } else {
-            // 这是已存在服务器的更新
-            // 安全地计算流量增量，防止agent重启导致数据错误
-            const upBytesSinceLast = data.rawTotalNet.up - (existingData.rawTotalNet.up || 0);
-            const downBytesSinceLast = data.rawTotalNet.down - (existingData.rawTotalNet.down || 0);
-            
-            if (upBytesSinceLast > 0) {
-                existingData.totalNet.up += upBytesSinceLast;
-            }
-            if (downBytesSinceLast > 0) {
-                existingData.totalNet.down += downBytesSinceLast;
-            }
-    
-            // 更新数据，同时保留首次上报时间和累计流量
-            serverDataStore[data.id] = {
-                ...data,
-                totalNet: existingData.totalNet,
-                resetDay: existingData.resetDay,
-                lastReset: existingData.lastReset,
-                startTime: existingData.startTime, 
-                lastUpdated: now,
-            };
-        }
-        
-        res.status(200).send('Report received.');
-
-    } catch (error) {
-        console.error('Error processing report:', error);
-        res.status(500).send('Internal Server Error');
+    const data = req.body;
+    if (!data.id) {
+        return res.status(400).send('Server ID is required.');
     }
+
+    const now = Date.now();
+    const existingData = serverDataStore[data.id];
+
+    if (!existingData) {
+        // New server
+        serverDataStore[data.id] = {
+            ...data,
+            totalNet: { up: 0, down: 0 },
+            resetDay: 1,
+            lastReset: `${new Date().getFullYear()}-${new Date().getMonth()}`,
+            startTime: now,
+            lastUpdated: now,
+        };
+    } else {
+        // Existing server
+        const upBytesSinceLast = data.rawTotalNet.up - (existingData.rawTotalNet ? existingData.rawTotalNet.up : 0);
+        const downBytesSinceLast = data.rawTotalNet.down - (existingData.rawTotalNet ? existingData.rawTotalNet.down : 0);
+
+        if (upBytesSinceLast > 0) {
+            existingData.totalNet.up += upBytesSinceLast;
+        }
+        if (downBytesSinceLast > 0) {
+            existingData.totalNet.down += downBytesSinceLast;
+        }
+
+        serverDataStore[data.id] = {
+            ...data,
+            totalNet: existingData.totalNet,
+            resetDay: existingData.resetDay,
+            lastReset: existingData.lastReset,
+            startTime: existingData.startTime,
+            lastUpdated: now,
+        };
+    }
+
+    res.status(200).send('Report received.');
 });
 
 // GET /api/servers
 app.get('/api/servers', (req, res) => {
     const now = Date.now();
     Object.values(serverDataStore).forEach(server => {
-        // 如果超过30秒没有更新，则视为离线
         server.online = (now - server.lastUpdated) < 30000;
     });
     res.json(Object.values(serverDataStore));
