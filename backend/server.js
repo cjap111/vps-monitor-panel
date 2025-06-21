@@ -1,11 +1,13 @@
 require('dotenv').config(); // 在文件顶部加载环境变量
 const express = require('express');
 const cors = require('cors');
+const fs = require('fs'); // 引入fs模块
+const path = require('path'); // 引入path模块
 const app = express();
 const PORT = 3000;
 
 // 从环境变量读取密码
-const DELETE_PASSWORD = process.env.DELETE_PASSWORD; 
+const DELETE_PASSWORD = process.env.DELETE_PASSWORD;
 const AGENT_INSTALL_PASSWORD = process.env.AGENT_INSTALL_PASSWORD;
 
 if (!DELETE_PASSWORD || !AGENT_INSTALL_PASSWORD) {
@@ -13,10 +15,33 @@ if (!DELETE_PASSWORD || !AGENT_INSTALL_PASSWORD) {
     process.exit(1);
 }
 
+// --- 数据持久化 ---
+const DB_FILE = path.join(__dirname, 'server_data.json');
+let serverDataStore = {};
+
+// 启动时加载数据
+try {
+    if (fs.existsSync(DB_FILE)) {
+        const data = fs.readFileSync(DB_FILE);
+        serverDataStore = JSON.parse(data);
+        console.log(`数据已成功从 ${DB_FILE} 加载。`);
+    }
+} catch (err) {
+    console.error("从文件加载数据时出错:", err);
+}
+
+// 保存数据到文件
+function saveData() {
+    try {
+        fs.writeFileSync(DB_FILE, JSON.stringify(serverDataStore, null, 2));
+    } catch (err) {
+        console.error("保存数据到文件时出错:", err);
+    }
+}
+// --- 数据持久化结束 ---
+
 app.use(cors());
 app.use(express.json({limit: '1mb'}));
-
-let serverDataStore = {};
 
 // POST /api/report
 app.post('/api/report', (req, res) => {
@@ -60,6 +85,7 @@ app.post('/api/report', (req, res) => {
         };
     }
 
+    saveData(); // 保存数据
     res.status(200).send('Report received.');
 });
 
@@ -80,6 +106,7 @@ app.post('/api/servers/:id/settings', (req, res) => {
         serverDataStore[id].totalNet.up = settings.totalNetUp;
         serverDataStore[id].totalNet.down = settings.totalNetDown;
         serverDataStore[id].resetDay = settings.resetDay;
+        saveData(); // 保存数据
         res.status(200).send('Settings updated.');
     } else {
         res.status(404).send('Server not found.');
@@ -96,6 +123,7 @@ app.delete('/api/servers/:id', (req, res) => {
 
     if (serverDataStore[id]) {
         delete serverDataStore[id];
+        saveData(); // 保存数据
         console.log(`服务器 ${id} 已被删除。`);
         res.status(200).send('服务器删除成功。');
     } else {
@@ -122,6 +150,7 @@ function checkAndResetTraffic() {
     const now = new Date();
     const currentDay = now.getDate();
     const currentMonthYear = `${now.getFullYear()}-${now.getMonth()}`;
+    let changed = false;
 
     Object.keys(serverDataStore).forEach(id => {
         const server = serverDataStore[id];
@@ -129,6 +158,11 @@ function checkAndResetTraffic() {
             console.log(`Resetting traffic for server ${id}`);
             server.totalNet = { up: 0, down: 0 };
             server.lastReset = currentMonthYear;
+            changed = true;
         }
     });
+
+    if (changed) {
+        saveData(); // 如果有流量重置，保存数据
+    }
 }
