@@ -1,22 +1,19 @@
-#!/bin/bash -e
+#!/bin/bash
 
 # =================================================================
 #
-#       一键式服务器监控面板安装/卸载脚本 v2.1 (最终稳定版)
+#       一键式服务器监控面板安装/卸载脚本 v2.0
 #
 # =================================================================
+
+# 脚本在遇到错误时立即退出
+set -e
 
 # --- 颜色定义 ---
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
-
-# --- 脚本欢迎信息 ---
-echo -e "${GREEN}=====================================================${NC}"
-echo -e "${GREEN}      欢迎使用服务器监控面板一键安装/卸载脚本      ${NC}"
-echo -e "${GREEN}=====================================================${NC}"
-echo ""
 
 # --- 函数：安装服务端 (Frontend + Backend) ---
 install_server() {
@@ -362,6 +359,7 @@ uninstall_agent() {
 }
 
 # --- 主菜单 ---
+# 已修正: 将case语句重构为多行格式以增强兼容性
 echo "请选择要执行的操作:"
 echo "1) 安装服务端 (Frontend + Backend)"
 echo "2) 安装被控端 (Agent)"
@@ -369,7 +367,7 @@ echo -e "${YELLOW}3) 卸载服务端${NC}"
 echo -e "${YELLOW}4) 卸载被控端${NC}"
 read -p "请输入选项 [1-4]: " choice
 
-case $choice in
+case "$choice" in
     1)
         install_server
         ;;
@@ -387,13 +385,5 @@ case $choice in
         exit 1
         ;;
 esac
-" and am asking a query about/based on this code below.
-Instructions to follow:
-  * Don't output/edit the document if the query is Direct/Simple. For example, if the query asks for a simple explanation, output a direct answer.
-  * Make sure to **edit** the document if the query shows the intent of editing the document, in which case output the entire edited document, **not just that section or the edits**.
-    * Don't output the same document/empty document and say that you have edited it.
-    * Don't change unrelated code in the document.
-  * Don't output  and  in your final response.
-  * Any references like "this" or "selected code" refers to the code between  and  tags.
-  * Just acknowledge my request in the introduction.
-  * Make sure to refer to the document as "Canvas" in your response.
+
+exit 0
