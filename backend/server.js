@@ -8,7 +8,7 @@ const PORT = 3000;
 
 // 从环境变量读取密码
 const DELETE_PASSWORD = process.env.DELETE_PASSWORD;
-const AGENT_INSTALL_PASSWORD = process.env.AGENT_INSTALL_PASSWORD;
+const AGENT_INSTALL_PASSWORD = process.env.AGENT_INSTALL_PASSWORD; // 被控端安装密码
 
 if (!DELETE_PASSWORD || !AGENT_INSTALL_PASSWORD) {
     console.error("错误：DELETE_PASSWORD 或 AGENT_INSTALL_PASSWORD 未在环境变量中设置！");
@@ -107,18 +107,24 @@ app.get('/api/servers', (req, res) => {
     res.json(Object.values(serverDataStore));
 });
 
-// POST /api/servers/:id/settings
+// POST /api/servers/:id/settings - 现在需要被控端安装密码
 app.post('/api/servers/:id/settings', (req, res) => {
     const { id } = req.params;
-    const settings = req.body;
+    const { totalNetUp, totalNetDown, resetDay, password } = req.body; // 添加 password
+    
+    // 验证被控端安装密码
+    if (!password || password !== AGENT_INSTALL_PASSWORD) {
+        return res.status(403).send('被控端安装密码不正确。');
+    }
+
     if (serverDataStore[id]) {
-        serverDataStore[id].totalNet.up = settings.totalNetUp;
-        serverDataStore[id].totalNet.down = settings.totalNetDown;
-        serverDataStore[id].resetDay = settings.resetDay;
+        serverDataStore[id].totalNet.up = totalNetUp;
+        serverDataStore[id].totalNet.down = totalNetDown;
+        serverDataStore[id].resetDay = resetDay;
         saveData(); // 保存数据
-        res.status(200).send('Settings updated.');
+        res.status(200).send('设置更新成功。');
     } else {
-        res.status(404).send('Server not found.');
+        res.status(404).send('未找到服务器。');
     }
 });
 
