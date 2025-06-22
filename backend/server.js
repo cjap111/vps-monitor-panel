@@ -60,7 +60,7 @@ app.post('/api/report', (req, res) => {
             ...data,
             totalNet: { up: 0, down: 0 },
             resetDay: 1,
-            // 使用 YYYY-M 格式记录上次重置的月份
+            // 使用YYYY-M 格式记录上次重置的月份
             lastReset: `${now_date.getFullYear()}-${now_date.getMonth() + 1}`, 
             startTime: now,
             lastUpdated: now,
@@ -154,7 +154,7 @@ app.post('/api/verify-agent-password', (req, res) => {
 function checkAndResetTraffic() {
     const now = new Date();
     const currentDay = now.getDate();
-    // 使用 YYYY-M 格式
+    // 使用YYYY-M 格式
     const currentMonthYear = `${now.getFullYear()}-${now.getMonth() + 1}`;
     let changed = false;
 
@@ -178,8 +178,8 @@ function checkAndResetTraffic() {
 }
 
 
-app.listen(PORT, '127.0.0.1', () => {
-    console.log(`Monitor backend server running on http://127.0.0.1:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => { // Changed from '127.0.0.1' to '0.0.0.0'
+    console.log(`Monitor backend server running on http://0.0.0.0:${PORT}`); // Updated console log message
     // 每小时检查一次是否需要重置流量
     setInterval(checkAndResetTraffic, 1000 * 60 * 60); 
     // 启动时立即执行一次检查
