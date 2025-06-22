@@ -173,6 +173,20 @@
         </div>
     </div>
 
+    <!-- Message Modal (New) -->
+    <div id="messageModal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
+        <div class="bg-[#2c2c2c] rounded-lg shadow-xl p-8 w-full max-w-sm m-4 border border-gray-600">
+            <div class="flex justify-between items-center mb-4">
+                <h3 id="messageModalTitle" class="text-xl font-bold text-white">消息</h3>
+                <button data-action="close-message" class="text-gray-400 hover:text-white"><i data-lucide="x" class="w-6 h-6"></i></button>
+            </div>
+            <p id="messageModalContent" class="text-gray-300 mb-6"></p>
+            <div class="flex justify-end">
+                <button data-action="close-message" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg">确定</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             lucide.createIcons();
@@ -185,6 +199,14 @@
             const API_ENDPOINT = `${window.location.protocol}//${window.location.host}/api`;
             const GB_IN_BYTES = 1024 * 1024 * 1024;
             const MB_IN_BYTES = 1024 * 1024;
+
+            // Function to display custom messages instead of alert()
+            function showMessage(title, message) {
+                document.getElementById('messageModalTitle').textContent = title;
+                document.getElementById('messageModalContent').textContent = message;
+                document.getElementById('messageModal').style.display = 'flex';
+                lucide.createIcons(); // Re-create icons if the modal content changes
+            }
 
             const formatBytes = (bytes, decimals = 2) => {
                 if (bytes === 0) return '0 Bytes';
@@ -205,6 +227,8 @@
                     const response = await fetch(`${API_ENDPOINT}/servers`);
                     if (!response.ok) {
                         console.error("无法获取服务器数据");
+                        // Optional: show a message if backend is unreachable
+                        // showMessage("错误", "无法连接到后端服务器，请检查后端服务是否运行。");
                         return;
                     }
                     const serverList = await response.json();
@@ -212,6 +236,7 @@
                     renderAllServers();
                 } catch (error) {
                     console.error("获取服务器列表时出错:", error);
+                    // showMessage("错误", "获取服务器列表时发生网络错误：" + error.message);
                 }
             }
 
@@ -281,8 +306,12 @@
             const addModal = document.getElementById('addServerModal');
             const settingsModal = document.getElementById('serverSettingsModal');
             const deleteModal = document.getElementById('deleteServerModal');
+            const messageModal = document.getElementById('messageModal'); // Get the new message modal
 
             document.getElementById('addServerBtn').addEventListener('click', () => {
+                // This command should ideally be fetched from the backend or configured dynamically
+                // based on the actual domain setup by the backend's install script.
+                // For now, it's a placeholder.
                 const command = `curl -sL https://raw.githubusercontent.com/cjap111/vps-monitor-panel/main/install.sh | bash -s -- 2`;
                 document.getElementById('installCommand').textContent = command;
                 addModal.style.display = 'flex';
@@ -298,6 +327,8 @@
 
                 if (action === 'close' && modal) {
                     modal.style.display = 'none';
+                } else if (action === 'close-message' && messageModal) { // Handle closing of the new message modal
+                    messageModal.style.display = 'none';
                 }
                 
                 const card = e.target.closest('[data-server-id]');
@@ -345,14 +376,14 @@
                         body: JSON.stringify(settings)
                     });
                     if (response.ok) {
-                        alert('设置更新成功！');
+                        showMessage('成功', '设置更新成功！'); // Replaced alert
                         settingsModal.style.display = 'none';
                         fetchAndRenderServers();
                     } else {
-                        alert('更新失败: ' + await response.text());
+                        showMessage('更新失败', '更新失败: ' + await response.text()); // Replaced alert
                     }
                 } catch (error) {
-                    alert('请求失败: ' + error);
+                    showMessage('请求失败', '请求失败: ' + error.message); // Replaced alert
                 }
             });
             
@@ -361,7 +392,7 @@
                 const serverId = document.getElementById('deleteServerId').value;
                 const password = document.getElementById('deletePassword').value;
                 if (!password) {
-                    alert('请输入密码！');
+                    showMessage('输入错误', '请输入密码！'); // Replaced alert
                     return;
                 }
 
@@ -373,16 +404,16 @@
                     });
 
                     if (response.ok) {
-                        alert('服务器删除成功！');
+                        showMessage('成功', '服务器删除成功！'); // Replaced alert
                         deleteModal.style.display = 'none';
                         document.getElementById('deletePassword').value = '';
                         fetchAndRenderServers();
                     } else {
                         const errorText = await response.text();
-                        alert(`删除失败: ${errorText}`);
+                        showMessage('删除失败', `删除失败: ${errorText}`); // Replaced alert
                     }
                 } catch (error) {
-                    alert(`请求失败: ${error}`);
+                    showMessage('请求失败', `请求失败: ${error.message}`); // Replaced alert
                 }
             });
 
