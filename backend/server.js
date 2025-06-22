@@ -22,7 +22,7 @@ let serverDataStore = {};
 // 启动时加载数据
 try {
     if (fs.existsSync(DB_FILE)) {
-        const data = fs.readFileSync(DB_FILE);
+        const data = fs.readFileSync(DB_FILE, 'utf8');
         serverDataStore = JSON.parse(data);
         console.log(`数据已成功从 ${DB_FILE} 加载。`);
     }
@@ -54,34 +54,41 @@ app.post('/api/report', (req, res) => {
     const existingData = serverDataStore[data.id];
 
     if (!existingData) {
-        // New server
+        // 新服务器首次上报
+        const now_date = new Date();
         serverDataStore[data.id] = {
             ...data,
             totalNet: { up: 0, down: 0 },
             resetDay: 1,
-            lastReset: `${new Date().getFullYear()}-${new Date().getMonth()}`,
+            // 使用 YYYY-M 格式记录上次重置的月份
+            lastReset: `${now_date.getFullYear()}-${now_date.getMonth() + 1}`, 
             startTime: now,
             lastUpdated: now,
+            online: true
         };
     } else {
-        // Existing server
-        const upBytesSinceLast = data.rawTotalNet.up - (existingData.rawTotalNet ? existingData.rawTotalNet.up : 0);
-        const downBytesSinceLast = data.rawTotalNet.down - (existingData.rawTotalNet ? existingData.rawTotalNet.down : 0);
-
-        if (upBytesSinceLast > 0) {
-            existingData.totalNet.up += upBytesSinceLast;
+        // 已有服务器更新数据
+        let upBytesSinceLast = 0;
+        let downBytesSinceLast = 0;
+        
+        // 健壮性检查：确保rawTotalNet存在且值是增长的 (防止agent重启导致计数重置)
+        if (existingData.rawTotalNet && data.rawTotalNet.up >= existingData.rawTotalNet.up) {
+            upBytesSinceLast = data.rawTotalNet.up - existingData.rawTotalNet.up;
         }
-        if (downBytesSinceLast > 0) {
-            existingData.totalNet.down += downBytesSinceLast;
+        if (existingData.rawTotalNet && data.rawTotalNet.down >= existingData.rawTotalNet.down) {
+            downBytesSinceLast = data.rawTotalNet.down - existingData.rawTotalNet.down;
         }
+        
+        existingData.totalNet.up += upBytesSinceLast;
+        existingData.totalNet.down += downBytesSinceLast;
 
+        // 合并新旧数据
         serverDataStore[data.id] = {
-            ...data,
-            totalNet: existingData.totalNet,
-            resetDay: existingData.resetDay,
-            lastReset: existingData.lastReset,
-            startTime: existingData.startTime,
+            ...existingData, // 保留旧的设置如 totalNet, resetDay等
+            ...data,         // 使用agent上报的最新动态数据覆盖
+            totalNet: existingData.totalNet, // 确保 totalNet 不被覆盖
             lastUpdated: now,
+            online: true
         };
     }
 
@@ -92,8 +99,10 @@ app.post('/api/report', (req, res) => {
 // GET /api/servers
 app.get('/api/servers', (req, res) => {
     const now = Date.now();
+    // 检查所有服务器的在线状态
     Object.values(serverDataStore).forEach(server => {
-        server.online = (now - server.lastUpdated) < 30000;
+        // 如果超过30秒没有更新，则认为离线
+        server.online = (now - server.lastUpdated) < 30000; 
     });
     res.json(Object.values(serverDataStore));
 });
@@ -141,21 +150,21 @@ app.post('/api/verify-agent-password', (req, res) => {
     }
 });
 
-app.listen(PORT, '127.0.0.1', () => {
-    console.log(`Monitor backend server running on http://127.0.0.1:${PORT}`);
-    setInterval(checkAndResetTraffic, 1000 * 60 * 60); 
-});
-
+// 流量重置检查函数
 function checkAndResetTraffic() {
     const now = new Date();
     const currentDay = now.getDate();
-    const currentMonthYear = `${now.getFullYear()}-${now.getMonth()}`;
+    // 使用 YYYY-M 格式
+    const currentMonthYear = `${now.getFullYear()}-${now.getMonth() + 1}`;
     let changed = false;
+
+    console.log(`[${new Date().toISOString()}] Running daily traffic reset check...`);
 
     Object.keys(serverDataStore).forEach(id => {
         const server = serverDataStore[id];
+        // 检查是否到达重置日，并且本月尚未重置
         if (server.resetDay === currentDay && server.lastReset !== currentMonthYear) {
-            console.log(`Resetting traffic for server ${id}`);
+            console.log(`正在为服务器 ${id} 重置流量...`);
             server.totalNet = { up: 0, down: 0 };
             server.lastReset = currentMonthYear;
             changed = true;
@@ -163,6 +172,16 @@ function checkAndResetTraffic() {
     });
 
     if (changed) {
-        saveData(); // 如果有流量重置，保存数据
+        console.log("流量重置完成，正在保存数据...");
+        saveData();
     }
 }
+
+
+app.listen(PORT, '127.0.0.1', () => {
+    console.log(`Monitor backend server running on http://127.0.0.1:${PORT}`);
+    // 每小时检查一次是否需要重置流量
+    setInterval(checkAndResetTraffic, 1000 * 60 * 60); 
+    // 启动时立即执行一次检查
+    checkAndResetTraffic();
+});
