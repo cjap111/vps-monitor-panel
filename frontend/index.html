@@ -42,14 +42,16 @@
         </header>
         <main id="server-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"></main>
     </div>
+
+    <!-- Server Card Template -->
     <template id="server-card-template">
-        <div class="card rounded-lg p-5 flex flex-col space-y-4">
+        <div class="card rounded-lg p-5 flex flex-col space-y-4" data-server-id="">
             <div class="flex justify-between items-start">
                 <div>
                     <h2 class="text-lg font-bold text-white truncate" data-id="name">服务器名称</h2>
                     <div class="text-xs text-gray-400 flex items-center space-x-2 mt-1">
-                        <i data-lucide="ubuntu" class="w-4 h-4"></i>
-                        <span data-id="os">Ubuntu 22.04 LTS</span>
+                         <i data-lucide="map-pin" class="w-4 h-4"></i>
+                        <span data-id="location">位置</span>
                     </div>
                 </div>
                 <div class="flex items-center space-x-2">
@@ -61,6 +63,12 @@
                     <button class="icon-btn text-red-500" data-action="delete"><i data-lucide="trash-2" class="w-5 h-5"></i></button>
                 </div>
             </div>
+
+            <div class="text-xs text-gray-400 flex items-center space-x-2">
+                <i data-lucide="ubuntu" class="w-4 h-4"></i>
+                <span data-id="os">Ubuntu 22.04 LTS</span>
+            </div>
+            
             <div class="space-y-4 pt-2">
                 <div class="resource-item">
                     <div class="flex justify-between text-sm mb-1"><span>CPU</span><span class="font-mono" data-id="cpu-usage">0%</span></div>
@@ -94,10 +102,55 @@
             </div>
         </div>
     </template>
-    <!-- Add Server Modal -->
-    <div id="addServerModal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">...</div>
+    
+    <!-- Add/Edit Server Modal (Consolidated) -->
+    <div id="addServerModal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
+        <div class="bg-[#2c2c2c] rounded-lg shadow-xl p-8 w-full max-w-lg m-4 border border-gray-600">
+            <div class="flex justify-between items-center mb-6">
+                <h3 id="modalTitle" class="text-xl font-bold text-white">添加新服务器</h3>
+                <button data-action="close" class="text-gray-400 hover:text-white"><i data-lucide="x" class="w-6 h-6"></i></button>
+            </div>
+            <p class="text-sm text-gray-400 mb-6">请复制以下一键安装命令到需要被监控的服务器上执行。</p>
+            <div class="bg-black rounded-md p-4 mb-6">
+                <pre class="text-sm text-green-400 overflow-x-auto"><code id="installCommand">...</code></pre>
+            </div>
+             <div class="flex justify-end">
+                 <button data-action="close" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg">关闭</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Settings Modal -->
-    <div id="serverSettingsModal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">...</div>
+    <div id="serverSettingsModal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
+        <div class="bg-[#2c2c2c] rounded-lg shadow-xl p-8 w-full max-w-lg m-4 border border-gray-600">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-xl font-bold text-white">服务器设置</h3>
+                <button data-action="close" class="text-gray-400 hover:text-white"><i data-lucide="x" class="w-6 h-6"></i></button>
+            </div>
+            <form id="serverSettingsForm">
+                <input type="hidden" id="settingServerId">
+                <div class="space-y-4">
+                    <div>
+                        <label for="settingTotalNetUp" class="block text-sm font-medium text-gray-300 mb-2">累计上传流量 (GB)</label>
+                        <input type="number" step="0.01" id="settingTotalNetUp" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:ring-indigo-500 focus:border-indigo-500" required>
+                    </div>
+                    <div>
+                        <label for="settingTotalNetDown" class="block text-sm font-medium text-gray-300 mb-2">累计下载流量 (GB)</label>
+                        <input type="number" step="0.01" id="settingTotalNetDown" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:ring-indigo-500 focus:border-indigo-500" required>
+                    </div>
+                    <div>
+                        <label for="settingResetDay" class="block text-sm font-medium text-gray-300 mb-2">流量重置日 (1-28)</label>
+                        <input type="number" min="1" max="28" id="settingResetDay" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:ring-indigo-500 focus:border-indigo-500" required>
+                    </div>
+                </div>
+                <div class="flex justify-end space-x-4 mt-8">
+                    <button type="button" data-action="close" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg">取消</button>
+                    <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg">保存设置</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Delete Confirmation Modal -->
     <div id="deleteServerModal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
         <div class="bg-[#2c2c2c] rounded-lg shadow-xl p-8 w-full max-w-md m-4 border border-red-500/50">
@@ -119,28 +172,122 @@
             </form>
         </div>
     </div>
+
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             lucide.createIcons();
+            
             const serverGrid = document.getElementById('server-grid');
             const template = document.getElementById('server-card-template');
+            
             let servers = [];
-            const API_ENDPOINT = 'https://monitor.yourdomain.com/api';
+            // API端点将自动使用当前页面的域名
+            const API_ENDPOINT = `${window.location.protocol}//${window.location.host}/api`;
             const GB_IN_BYTES = 1024 * 1024 * 1024;
+            const MB_IN_BYTES = 1024 * 1024;
 
-            const formatBytes = (bytes, decimals = 2) => { /* ... */ };
-            const formatSpeed = (bytes) => { /* ... */ };
+            const formatBytes = (bytes, decimals = 2) => {
+                if (bytes === 0) return '0 Bytes';
+                const k = 1024;
+                const dm = decimals < 0 ? 0 : decimals;
+                const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+            };
+            
+            const formatSpeed = (bytes) => {
+                 if (bytes === 0) return '0 KB/s';
+                 return `${formatBytes(bytes, 2)}/s`;
+            }
 
-            async function fetchAndRenderServers() { /* ... */ }
-            function renderAllServers() { /* ... */ }
-            function updateAllServersUI() { /* ... */ }
-            function updateServerCard(card, serverData) { /* ... */ }
+            async function fetchAndRenderServers() {
+                try {
+                    const response = await fetch(`${API_ENDPOINT}/servers`);
+                    if (!response.ok) {
+                        console.error("无法获取服务器数据");
+                        return;
+                    }
+                    const serverList = await response.json();
+                    servers = serverList;
+                    renderAllServers();
+                } catch (error) {
+                    console.error("获取服务器列表时出错:", error);
+                }
+            }
 
+            function renderAllServers() {
+                // 清空现有卡片
+                serverGrid.innerHTML = '';
+                // 排序：在线的在前，离线的在后
+                servers.sort((a, b) => (b.online ? 1 : 0) - (a.online ? 1 : 0));
+                servers.forEach(server => {
+                    const card = template.content.cloneNode(true).querySelector('.card');
+                    card.dataset.serverId = server.id;
+                    updateServerCard(card, server);
+                    serverGrid.appendChild(card);
+                });
+                lucide.createIcons();
+            }
+
+            function updateServerCard(card, serverData) {
+                const query = (selector) => card.querySelector(`[data-id="${selector}"]`);
+
+                query("name").textContent = serverData.name;
+                query("location").textContent = serverData.location || "N/A";
+                query("os").textContent = serverData.os || "Unknown OS";
+
+                const statusDot = query("status-dot");
+                const statusText = query("status-text");
+                if (serverData.online) {
+                    statusDot.className = "status-dot status-online";
+                    statusText.textContent = "在线";
+                    statusText.className = "font-medium text-sm text-green-400";
+                } else {
+                    statusDot.className = "status-dot status-offline";
+                    statusText.textContent = "离线";
+                    statusText.className = "font-medium text-sm text-red-500";
+                }
+                
+                // Resources
+                const cpuUsage = serverData.cpu.toFixed(1);
+                query("cpu-usage").textContent = `${cpuUsage}%`;
+                query("cpu-bar").style.width = `${cpuUsage}%`;
+
+                const memUsedGB = serverData.mem.used / 1024;
+                const memTotalGB = serverData.mem.total / 1024;
+                const memPercent = (serverData.mem.used / serverData.mem.total * 100).toFixed(1);
+                query("mem-usage").textContent = `${memUsedGB.toFixed(2)} GB / ${memTotalGB.toFixed(2)} GB`;
+                query("mem-bar").style.width = `${memPercent}%`;
+                
+                const diskUsedGB = serverData.disk.used / 1024;
+                const diskTotalGB = serverData.disk.total / 1024;
+                const diskPercent = (serverData.disk.used / serverData.disk.total * 100).toFixed(1);
+                query("disk-usage").textContent = `${diskUsedGB.toFixed(2)} GB / ${diskTotalGB.toFixed(2)} GB`;
+                query("disk-bar").style.width = `${diskPercent}%`;
+                
+                // Network
+                query("net-down").textContent = formatSpeed(serverData.net.down);
+                query("net-up").textContent = formatSpeed(serverData.net.up);
+                
+                const uptimeDays = ((Date.now() - serverData.startTime) / (1000 * 60 * 60 * 24)).toFixed(0);
+                query("uptime").textContent = `在线 ${uptimeDays} 天`;
+
+                // Total Traffic
+                query("total-net-up").textContent = (serverData.totalNet.up / GB_IN_BYTES).toFixed(2) + ' GB';
+                query("total-net-down").textContent = (serverData.totalNet.down / GB_IN_BYTES).toFixed(2) + ' GB';
+                query("reset-info").textContent = `每月${serverData.resetDay}日重置`;
+            }
+            
             const addModal = document.getElementById('addServerModal');
             const settingsModal = document.getElementById('serverSettingsModal');
             const deleteModal = document.getElementById('deleteServerModal');
 
-            document.getElementById('addServerBtn').addEventListener('click', () => addModal.style.display = 'flex');
+            document.getElementById('addServerBtn').addEventListener('click', () => {
+                const command = `curl -sL https://raw.githubusercontent.com/cjap111/vps-monitor-panel/main/install.sh | bash -s -- 2`;
+                document.getElementById('installCommand').textContent = command;
+                addModal.style.display = 'flex';
+                lucide.createIcons();
+            });
 
             document.body.addEventListener('click', (e) => {
                 const actionTarget = e.target.closest('[data-action]');
@@ -151,16 +298,28 @@
 
                 if (action === 'close' && modal) {
                     modal.style.display = 'none';
-                } else if (action === 'settings') {
-                    const serverId = actionTarget.closest('[data-server-id]').dataset.serverId;
+                }
+                
+                const card = e.target.closest('[data-server-id]');
+                if (!card) return;
+
+                const serverId = card.dataset.serverId;
+                if (action === 'settings') {
                     openSettingsModal(serverId);
                 } else if (action === 'delete') {
-                    const serverId = actionTarget.closest('[data-server-id]').dataset.serverId;
                     openDeleteModal(serverId);
                 }
             });
 
-            function openSettingsModal(serverId) { /* ... */ }
+            function openSettingsModal(serverId) {
+                const server = servers.find(s => s.id == serverId);
+                if (!server) return;
+                document.getElementById('settingServerId').value = server.id;
+                document.getElementById('settingTotalNetUp').value = (server.totalNet.up / GB_IN_BYTES).toFixed(2);
+                document.getElementById('settingTotalNetDown').value = (server.totalNet.down / GB_IN_BYTES).toFixed(2);
+                document.getElementById('settingResetDay').value = server.resetDay;
+                settingsModal.style.display = 'flex';
+            }
 
             function openDeleteModal(serverId) {
                 const server = servers.find(s => s.id == serverId);
@@ -170,9 +329,33 @@
                 deleteModal.style.display = 'flex';
             }
 
-            document.getElementById('addServerForm').addEventListener('submit', (e) => { /* ... */ });
-            document.getElementById('serverSettingsForm').addEventListener('submit', async (e) => { /* ... */ });
+            document.getElementById('serverSettingsForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const serverId = document.getElementById('settingServerId').value;
+                const settings = {
+                    totalNetUp: parseFloat(document.getElementById('settingTotalNetUp').value) * GB_IN_BYTES,
+                    totalNetDown: parseFloat(document.getElementById('settingTotalNetDown').value) * GB_IN_BYTES,
+                    resetDay: parseInt(document.getElementById('settingResetDay').value)
+                };
 
+                try {
+                    const response = await fetch(`${API_ENDPOINT}/servers/${serverId}/settings`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(settings)
+                    });
+                    if (response.ok) {
+                        alert('设置更新成功！');
+                        settingsModal.style.display = 'none';
+                        fetchAndRenderServers();
+                    } else {
+                        alert('更新失败: ' + await response.text());
+                    }
+                } catch (error) {
+                    alert('请求失败: ' + error);
+                }
+            });
+            
             document.getElementById('deleteServerForm').addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const serverId = document.getElementById('deleteServerId').value;
@@ -192,6 +375,7 @@
                     if (response.ok) {
                         alert('服务器删除成功！');
                         deleteModal.style.display = 'none';
+                        document.getElementById('deletePassword').value = '';
                         fetchAndRenderServers();
                     } else {
                         const errorText = await response.text();
@@ -199,12 +383,12 @@
                     }
                 } catch (error) {
                     alert(`请求失败: ${error}`);
-                } finally {
-                     document.getElementById('deletePassword').value = '';
                 }
             });
 
+            // Initial fetch and render
             fetchAndRenderServers();
+            // Refresh data every 5 seconds
             setInterval(fetchAndRenderServers, 5000);
         });
     </script>
