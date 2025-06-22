@@ -141,6 +141,11 @@
                         <label for="settingResetDay" class="block text-sm font-medium text-gray-300 mb-2">流量重置日 (1-28)</label>
                         <input type="number" min="1" max="28" id="settingResetDay" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:ring-indigo-500 focus:border-indigo-500" required>
                     </div>
+                    <!-- 新增的密码输入框 -->
+                    <div>
+                        <label for="settingsPassword" class="block text-sm font-medium text-gray-300 mb-2">被控端安装密码</label>
+                        <input type="password" id="settingsPassword" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:ring-indigo-500 focus:border-indigo-500" required>
+                    </div>
                 </div>
                 <div class="flex justify-end space-x-4 mt-8">
                     <button type="button" data-action="close" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg">取消</button>
@@ -348,6 +353,7 @@
                 document.getElementById('settingTotalNetUp').value = (server.totalNet.up / GB_IN_BYTES).toFixed(2);
                 document.getElementById('settingTotalNetDown').value = (server.totalNet.down / GB_IN_BYTES).toFixed(2);
                 document.getElementById('settingResetDay').value = server.resetDay;
+                document.getElementById('settingsPassword').value = ''; // 清空密码字段
                 settingsModal.style.display = 'flex';
             }
 
@@ -362,10 +368,18 @@
             document.getElementById('serverSettingsForm').addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const serverId = document.getElementById('settingServerId').value;
+                const settingsPassword = document.getElementById('settingsPassword').value; // 获取密码
+
+                if (!settingsPassword) {
+                    showMessage('输入错误', '请输入被控端安装密码！');
+                    return;
+                }
+
                 const settings = {
                     totalNetUp: parseFloat(document.getElementById('settingTotalNetUp').value) * GB_IN_BYTES,
                     totalNetDown: parseFloat(document.getElementById('settingTotalNetDown').value) * GB_IN_BYTES,
-                    resetDay: parseInt(document.getElementById('settingResetDay').value)
+                    resetDay: parseInt(document.getElementById('settingResetDay').value),
+                    password: settingsPassword // 将密码添加到请求体中
                 };
 
                 try {
@@ -375,14 +389,15 @@
                         body: JSON.stringify(settings)
                     });
                     if (response.ok) {
-                        showMessage('成功', '设置更新成功！'); // Replaced alert
+                        showMessage('成功', '设置更新成功！');
                         settingsModal.style.display = 'none';
                         fetchAndRenderServers();
                     } else {
-                        showMessage('更新失败', '更新失败: ' + await response.text()); // Replaced alert
+                        const errorText = await response.text();
+                        showMessage('更新失败', `更新失败: ${errorText}`);
                     }
                 } catch (error) {
-                    showMessage('请求失败', '请求失败: ' + error.message); // Replaced alert
+                    showMessage('请求失败', `请求失败: ${error.message}`);
                 }
             });
             
@@ -391,7 +406,7 @@
                 const serverId = document.getElementById('deleteServerId').value;
                 const password = document.getElementById('deletePassword').value;
                 if (!password) {
-                    showMessage('输入错误', '请输入密码！'); // Replaced alert
+                    showMessage('输入错误', '请输入密码！');
                     return;
                 }
 
@@ -403,16 +418,16 @@
                     });
 
                     if (response.ok) {
-                        showMessage('成功', '服务器删除成功！'); // Replaced alert
+                        showMessage('成功', '服务器删除成功！\n请注意：为了彻底移除此服务器，请务必前往对应的物理服务器执行被控端卸载命令。');
                         deleteModal.style.display = 'none';
                         document.getElementById('deletePassword').value = '';
                         fetchAndRenderServers();
                     } else {
                         const errorText = await response.text();
-                        showMessage('删除失败', `删除失败: ${errorText}`); // Replaced alert
+                        showMessage('删除失败', `删除失败: ${errorText}`);
                     }
                 } catch (error) {
-                    showMessage('请求失败', `请求失败: ${error.message}`); // Replaced alert
+                    showMessage('请求失败', `请求失败: ${error.message}`);
                 }
             });
 
