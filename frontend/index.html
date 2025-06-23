@@ -728,7 +728,8 @@
                 if (detailViewInterval) {
                     clearInterval(detailViewInterval);
                 }
-                detailViewInterval = setInterval(() => fetchServerDetail(serverId), 1000);
+                // Changed interval to 1 second
+                detailViewInterval = setInterval(() => fetchServerDetail(serverId), 1000); 
                 console.log('Detail modal opened, refresh interval started.'); // Debugging
             }
 
@@ -854,26 +855,26 @@
                         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
                         if (diffDays > 0) {
-                            detailExpirationInfo.textContent = `到期日期: 剩余 ${diffDays} 天`;
-                            detailExpirationInfo.classList.remove('text-red-400', 'text-orange-400');
+                            expirationInfo.textContent = `剩余 ${diffDays} 天`;
+                            expirationInfo.classList.remove('text-red-400', 'text-orange-400');
                             if (diffDays <= 7) {
-                                detailExpirationInfo.classList.add('text-orange-400');
+                                expirationInfo.classList.add('text-orange-400');
                             } else {
-                                detailExpirationInfo.classList.add('text-green-400');
+                                expirationInfo.classList.add('text-green-400');
                             }
                         } else if (diffDays === 0) {
-                            detailExpirationInfo.textContent = `到期日期: 今天到期`;
-                            detailExpirationInfo.classList.remove('text-green-400', 'text-red-400');
-                            detailExpirationInfo.classList.add('text-orange-400');
+                            expirationInfo.textContent = `今天到期`;
+                            expirationInfo.classList.remove('text-green-400', 'text-red-400');
+                            expirationInfo.classList.add('text-orange-400');
                         } else {
-                            detailExpirationInfo.textContent = `到期日期: 已过期 ${Math.abs(diffDays)} 天`;
-                            detailExpirationInfo.classList.remove('text-orange-400', 'text-green-400');
-                            detailExpirationInfo.classList.add('text-red-400');
+                            expirationInfo.textContent = `已过期 ${Math.abs(diffDays)} 天`;
+                            expirationInfo.classList.remove('text-orange-400', 'text-green-400');
+                            expirationInfo.classList.add('text-red-400');
                         }
                     } else {
-                        detailExpirationInfo.textContent = '到期日期: 未设置';
-                        detailExpirationInfo.classList.remove('text-orange-400', 'text-red-400', 'text-green-400');
-                        detailExpirationInfo.classList.add('text-gray-400');
+                        expirationInfo.textContent = '到期日期: 未设置';
+                        expirationInfo.classList.remove('text-orange-400', 'text-red-400', 'text-green-400');
+                        expirationInfo.classList.add('text-gray-400');
                     }
                 }
             }
@@ -903,8 +904,12 @@
                             ticks: {
                                 color: '#888',
                                 callback: function(value, index, values) {
-                                    const unit = this.options.unit || ''; 
-                                    return `${value} ${unit.replace('/s', '')}`;
+                                    // Dynamically format Y-axis labels to show appropriate unit (B/s, KB/s, MB/s, GB/s)
+                                    if (value === 0) return '0 B/s';
+                                    const k = 1024;
+                                    const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s', 'TB/s'];
+                                    const i = Math.floor(Math.log(value) / Math.log(k));
+                                    return parseFloat((value / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
                                 }
                             }
                         }
@@ -920,8 +925,12 @@
                                         label += ': ';
                                     }
                                     const value = context.parsed.y;
-                                    const unit = context.chart.options.scales.y.unit || ''; 
-                                    return label + `${value} ${unit}`;
+                                    // Use the same formatting logic for tooltip as for Y-axis ticks
+                                    if (value === 0) return label + '0 B/s';
+                                    const k = 1024;
+                                    const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s', 'TB/s'];
+                                    const i = Math.floor(Math.log(value) / Math.log(k));
+                                    return label + `${parseFloat((value / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
                                 }
                             }
                         }
@@ -942,16 +951,7 @@
                             pointRadius: 0
                         }]
                     },
-                    options: {
-                        ...commonChartOptions,
-                        scales: {
-                            ...commonChartOptions.scales,
-                            y: {
-                                ...commonChartOptions.scales.y,
-                                unit: 'B/s'
-                            }
-                        }
-                    }
+                    options: commonChartOptions // Use commonChartOptions directly for both
                 });
 
                 uploadChartInstance = new Chart(uploadCtx, {
@@ -968,51 +968,20 @@
                             pointRadius: 0
                         }]
                     },
-                    options: {
-                        ...commonChartOptions,
-                        scales: {
-                            ...commonChartOptions.scales,
-                            y: {
-                                ...commonChartOptions.scales.y,
-                                unit: 'B/s'
-                            }
-                        }
-                    }
+                    options: commonChartOptions // Use commonChartOptions directly for both
                 });
             }
 
-            // Function to dynamically format speed for charts and update chart titles
-            function formatSpeedForChart(bytes) {
-                if (bytes === 0) return { value: 0, unit: 'B/s', rawValue: 0 };
-                const k = 1024;
-                const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s', 'TB/s'];
-                let i = 0;
-                while (bytes >= k && i < sizes.length - 1) {
-                    bytes /= k;
-                    i++;
-                }
-                return { value: parseFloat(bytes.toFixed(2)), unit: sizes[i], rawValue: bytes };
-            }
-
-            // Function to update chart data
+            // Function to update chart data (simplified as unit conversion is now in Chart.js callback)
             function updateDetailCharts(server) {
-                const rawDownloadBytes = server.net ? server.net.down : 0;
-                const rawUploadBytes = server.net ? server.net.up : 0;
-
-                const formattedDownload = formatSpeedForChart(rawDownloadBytes);
-                const formattedUpload = formatSpeedForChart(rawUploadBytes);
-
-                const downloadChartTitleElement = document.getElementById('downloadChartTitle');
-                if (downloadChartTitleElement) downloadChartTitleElement.textContent = `下载速度`;
-
-                const uploadChartTitleElement = document.getElementById('uploadChartTitle');
-                if (uploadChartTitleElement) uploadChartTitleElement.textContent = `上传速度`;
-
+                // raw data is already in B/s from agent.sh
+                const rawDownloadBytesPerSecond = server.net ? server.net.down : 0;
+                const rawUploadBytesPerSecond = server.net ? server.net.up : 0;
 
                 networkHistory.download.shift();
                 networkHistory.upload.shift();
-                networkHistory.download.push(formattedDownload.rawValue);
-                networkHistory.upload.push(formattedUpload.rawValue);
+                networkHistory.download.push(rawDownloadBytesPerSecond);
+                networkHistory.upload.push(rawUploadBytesPerSecond);
 
                 networkHistory.labels = Array.from({length: chartDataPoints}, (_, i) => {
                     const diff = chartDataPoints - 1 - i;
@@ -1022,9 +991,7 @@
                 });
 
                 if (downloadChartInstance && uploadChartInstance) {
-                    downloadChartInstance.options.scales.y.unit = formattedDownload.unit;
-                    uploadChartInstance.options.scales.y.unit = formattedUpload.unit;
-
+                    // Update data directly, Chart.js Y-axis callback will handle unit formatting
                     downloadChartInstance.data.labels = networkHistory.labels;
                     downloadChartInstance.data.datasets[0].data = networkHistory.download;
                     downloadChartInstance.update();
