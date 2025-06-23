@@ -52,6 +52,19 @@
             overflow-y: auto; /* Enable vertical scrolling */
             padding-right: 1rem; /* Add some padding for scrollbar if needed */
         }
+
+        /* Chart container height to prevent infinite stretching */
+        .chart-container {
+            position: relative; /* Needed for chart.js responsiveness */
+            height: 200px; /* Fixed height for the chart */
+            width: 100%; /* Ensure it takes full width of its grid column */
+        }
+
+        /* Make canvas responsive within its container */
+        .chart-container canvas {
+            max-width: 100%;
+            height: 100%; /* Important for canvas to respect container height */
+        }
     </style>
 </head>
 <body class="text-gray-200">
@@ -295,11 +308,11 @@
 
                     <!-- Network Charts -->
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-                        <div>
+                        <div class="chart-container">
                             <h4 class="text-lg font-semibold text-gray-200 mb-3">下载速度 (KB/s)</h4>
                             <canvas id="downloadChart"></canvas>
                         </div>
-                        <div>
+                        <div class="chart-container">
                             <h4 class="text-lg font-semibold text-gray-200 mb-3">上传速度 (KB/s)</h4>
                             <canvas id="uploadChart"></canvas>
                         </div>
