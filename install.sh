@@ -124,11 +124,27 @@ install_server() {
 server {
     listen 80;
     server_name $DOMAIN;
-    root /var/www/monitor-frontend;
-    index index.html;
+    return 301 https://\$host\$request_uri; # 强制 HTTP 跳转到 HTTPS
+}
+
+server {
+    listen 443 ssl;
+    server_name $DOMAIN;
+
+    # Certbot 默认的证书路径
+    ssl_certificate /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
+
+    # 推荐的 SSL 协议和密码套件，增强安全性
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers on;
+
+    root /var/www/monitor-frontend; # 前端文件的根目录
+    index index.html; # 默认索引文件
 
     location /api {
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass http://127.0.0.1:3000; # 将 /api 请求代理到 Node.js 后端
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -141,7 +157,7 @@ server {
     }
     
     location / {
-        # 修正：将所有未找到的文件和目录的请求重定向到 index.html，以支持前端路由
+        # 对于前端路由，将所有未找到的文件和目录的请求重定向到 index.html
         try_files \$uri \$uri/ /index.html; 
     }
 }
@@ -182,7 +198,8 @@ EOF
             exit 1 # 邮箱是申请新证书的必要条件
         fi
 
-        sudo certbot --nginx --agree-tos --redirect --non-interactive -m "$EMAIL" -d "$DOMAIN"
+        # 注意：此处移除了 --redirect 参数，因为我们已经在Nginx配置中手动添加了跳转
+        sudo certbot --nginx --agree-tos --non-interactive -m "$EMAIL" -d "$DOMAIN"
     fi
 
     # 5. 部署前端 (强制更新)
