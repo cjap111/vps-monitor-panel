@@ -282,6 +282,10 @@
                         <div class="w-full progress-bar-bg rounded-full h-3">
                             <div class="bg-blue-500 h-3 rounded-full progress-bar" id="detailCpuBar" style="width: 0%"></div>
                         </div>
+                        <div class="text-sm text-gray-400 mt-2">
+                            <i data-lucide="cpu" class="w-4 h-4 inline-block align-middle mr-2"></i>
+                            <span id="detailCpuModel">CPU 型号: N/A</span>
+                        </div>
                     </div>
 
                     <!-- Memory -->
@@ -712,6 +716,9 @@
                 document.getElementById('detailServerName').textContent = server.name;
                 document.getElementById('detailServerLocation').textContent = server.location;
                 document.getElementById('detailServerOS').textContent = server.os;
+                // Add CPU Model
+                document.getElementById('detailCpuModel').textContent = `CPU 型号: ${server.cpuModel || 'N/A'}`;
+
 
                 const detailCpuUsage = server.cpu ? server.cpu.toFixed(1) : 0;
                 document.getElementById('detailCpuUsage').textContent = `${detailCpuUsage}%`;
@@ -790,7 +797,7 @@
                 if (downloadChartInstance) downloadChartInstance.destroy();
                 if (uploadChartInstance) uploadChartInstance.destroy();
 
-                const chartOptions = {
+                const commonChartOptions = { // Renamed to avoid repetition
                     animation: false, // Disable animation for real-time updates
                     responsive: true,
                     maintainAspectRatio: false,
@@ -804,7 +811,15 @@
                         y: {
                             beginAtZero: true,
                             grid: { color: '#3d3d3d' },
-                            ticks: { color: '#888' }
+                            ticks: {
+                                color: '#888',
+                                callback: function(value, index, values) {
+                                    // Custom tick label to show dynamic unit
+                                    // 'this' refers to the scale instance
+                                    const unit = this.options.unit || ''; 
+                                    return `${value} ${unit.replace('/s', '')}`; // Remove /s for Y-axis tick
+                                }
+                            }
                         }
                     },
                     plugins: {
@@ -827,7 +842,7 @@
                     }
                 };
 
-                // Initialize with specific units that will be updated dynamically
+                // Initialize download chart
                 downloadChartInstance = new Chart(downloadCtx, {
                     type: 'line',
                     data: {
@@ -843,13 +858,12 @@
                         }]
                     },
                     options: {
-                        ...chartOptions,
+                        ...commonChartOptions,
                         scales: {
-                            ...chartOptions.scales,
+                            ...commonChartOptions.scales,
                             y: {
-                                ...chartOptions.scales.y,
-                                // Add a unit property to y-axis options for custom tooltip
-                                unit: 'B/s' // Initial unit
+                                ...commonChartOptions.scales.y,
+                                unit: 'B/s' // Initial unit for download Y-axis
                             }
                         }
                     }
@@ -870,13 +884,12 @@
                         }]
                     },
                     options: {
-                        ...chartOptions,
+                        ...commonChartOptions,
                         scales: {
-                            ...chartOptions.scales,
+                            ...commonChartOptions.scales,
                             y: {
-                                ...chartOptions.scales.y,
-                                // Add a unit property to y-axis options for custom tooltip
-                                unit: 'B/s' // Initial unit
+                                ...commonChartOptions.scales.y,
+                                unit: 'B/s' // Initial unit for upload Y-axis
                             }
                         }
                     }
@@ -904,9 +917,9 @@
                 const formattedDownload = formatSpeedForChart(rawDownloadBytes);
                 const formattedUpload = formatSpeedForChart(rawUploadBytes);
 
-                // Update chart titles with current dynamic unit
-                document.getElementById('downloadChartTitle').textContent = `下载速度 (${formattedDownload.unit})`;
-                document.getElementById('uploadChartTitle').textContent = `上传速度 (${formattedUpload.unit})`;
+                // Update chart titles without units, as unit is now in Y-axis
+                document.getElementById('downloadChartTitle').textContent = `下载速度`;
+                document.getElementById('uploadChartTitle').textContent = `上传速度`;
 
 
                 // Remove oldest data point and add new data point
@@ -924,7 +937,7 @@
                 });
 
                 if (downloadChartInstance && uploadChartInstance) {
-                    // Update Y-axis unit for tooltip
+                    // Update Y-axis unit for the charts (used by the callback function)
                     downloadChartInstance.options.scales.y.unit = formattedDownload.unit;
                     uploadChartInstance.options.scales.y.unit = formattedUpload.unit;
 
