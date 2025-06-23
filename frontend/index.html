@@ -38,6 +38,12 @@
         .card .text-lg.font-bold.text-white.truncate {
             min-width: 0; /* Important for truncation to work in flex items */
         }
+
+        /* Styles for the detail modal to control height */
+        .detail-modal-content-wrapper {
+            max-height: 80vh; /* Set a maximum height relative to viewport height */
+            overflow-y: auto; /* Enable vertical scrolling if content overflows */
+        }
     </style>
 </head>
 <body class="text-gray-200">
@@ -124,7 +130,7 @@
                 </div>
                 <div class="flex justify-between items-center pl-1">
                     <span class="flex items-center space-x-1.5 text-red-400"><i data-lucide="arrow-up" class="w-3 h-3"></i><span data-id="total-net-up" class="font-mono">0 GB</span></span>
-                    <span class="flex items-center space-x-1.5 text-cyan-400"><i data-lucide="arrow-down" class="w-3 h-3"></i><span data-id="total-net-down" class="font-mono">0 GB</span></span>
+                    <span class="flex items-center space-x-1.5 text-cyan-400"><i data-lucide="arrow-down" class="w-3 h-3"></i><span class="font-mono">0 GB</span></span>
                 </div>
                  <!-- 新增的到期日期显示 -->
                 <div class="flex justify-between items-center pl-1 pt-1">
@@ -230,8 +236,8 @@
 
     <!-- Server Detail Modal -->
     <div id="serverDetailModal" class="fixed inset-0 z-50 flex items-center justify-center hidden modal-backdrop overflow-y-auto">
-        <div class="bg-[#2c2c2c] rounded-lg shadow-xl p-8 w-full max-w-2xl m-4 border border-gray-600">
-            <div class="flex justify-between items-start mb-6">
+        <div class="bg-[#2c2c2c] rounded-lg shadow-xl p-8 w-full max-w-2xl m-4 border border-gray-600 flex flex-col">
+            <div class="flex justify-between items-start mb-6 flex-shrink-0">
                 <div>
                     <h3 id="detailServerName" class="text-2xl font-bold text-white mb-2">服务器详情</h3>
                     <div class="text-sm text-gray-400 flex items-center space-x-2">
@@ -243,66 +249,69 @@
                 <button data-action="close-detail" class="text-gray-400 hover:text-white"><i data-lucide="x" class="w-6 h-6"></i></button>
             </div>
 
-            <div class="space-y-6">
-                <!-- CPU -->
-                <div>
-                    <div class="flex justify-between text-sm mb-1 text-gray-300">
-                        <span>CPU 使用率</span>
-                        <span class="font-mono text-white" id="detailCpuUsage">0%</span>
-                    </div>
-                    <div class="w-full progress-bar-bg rounded-full h-3">
-                        <div class="bg-blue-500 h-3 rounded-full progress-bar" id="detailCpuBar" style="width: 0%"></div>
-                    </div>
-                </div>
-
-                <!-- Memory -->
-                <div>
-                    <div class="flex justify-between text-sm mb-1 text-gray-300">
-                        <span>内存使用</span>
-                        <span class="font-mono text-white" id="detailMemUsage">0 MB / 0 MB</span>
-                    </div>
-                    <div class="w-full progress-bar-bg rounded-full h-3">
-                        <div class="bg-purple-500 h-3 rounded-full progress-bar" id="detailMemBar" style="width: 0%"></div>
-                    </div>
-                </div>
-
-                <!-- Disk -->
-                <div>
-                    <div class="flex justify-between text-sm mb-1 text-gray-300">
-                        <span>硬盘使用</span>
-                        <span class="font-mono text-white" id="detailDiskUsage">0 GB / 0 GB</span>
-                    </div>
-                    <div class="w-full progress-bar-bg rounded-full h-3">
-                        <div class="bg-green-500 h-3 rounded-full progress-bar" id="detailDiskBar" style="width: 0%"></div>
-                    </div>
-                </div>
-
-                <!-- Network Charts -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+            <!-- Scrollable content wrapper -->
+            <div class="flex-grow overflow-y-auto pr-2 detail-modal-content-wrapper">
+                <div class="space-y-6">
+                    <!-- CPU -->
                     <div>
-                        <h4 class="text-lg font-semibold text-gray-200 mb-3">下载速度 (KB/s)</h4>
-                        <canvas id="downloadChart"></canvas>
+                        <div class="flex justify-between text-sm mb-1 text-gray-300">
+                            <span>CPU 使用率</span>
+                            <span class="font-mono text-white" id="detailCpuUsage">0%</span>
+                        </div>
+                        <div class="w-full progress-bar-bg rounded-full h-3">
+                            <div class="bg-blue-500 h-3 rounded-full progress-bar" id="detailCpuBar" style="width: 0%"></div>
+                        </div>
                     </div>
-                    <div>
-                        <h4 class="text-lg font-semibold text-gray-200 mb-3">上传速度 (KB/s)</h4>
-                        <canvas id="uploadChart"></canvas>
-                    </div>
-                </div>
 
-                <div class="pt-4 border-t border-gray-700/50 flex justify-between items-center text-sm text-gray-300">
-                    <div class="flex items-center space-x-2"><i data-lucide="bar-chart-3" class="w-4 h-4"></i><span>总上传: <span id="detailTotalNetUp" class="font-mono text-red-400">0 GB</span></span></div>
-                    <div class="flex items-center space-x-2"><i data-lucide="bar-chart-3" class="w-4 h-4"></i><span>总下载: <span id="detailTotalNetDown" class="font-mono text-cyan-400">0 GB</span></span></div>
-                </div>
-                <div class="text-xs text-gray-500 flex justify-between items-center">
-                    <span class="flex items-center space-x-2"><i data-lucide="clock" class="w-4 h-4"></i><span id="detailUptime">在线 0 天</span></span>
-                    <span class="flex items-center space-x-2"><i data-lucide="repeat" class="w-4 h-4"></i><span id="detailResetInfo">每月1日重置</span></span>
-                </div>
-                 <div class="pt-1 text-xs text-gray-400 flex items-center space-x-2">
-                    <i data-lucide="calendar" class="w-4 h-4"></i><span id="detailExpirationInfo" class="font-mono"></span>
+                    <!-- Memory -->
+                    <div>
+                        <div class="flex justify-between text-sm mb-1 text-gray-300">
+                            <span>内存使用</span>
+                            <span class="font-mono text-white" id="detailMemUsage">0 MB / 0 MB</span>
+                        </div>
+                        <div class="w-full progress-bar-bg rounded-full h-3">
+                            <div class="bg-purple-500 h-3 rounded-full progress-bar" id="detailMemBar" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <!-- Disk -->
+                    <div>
+                        <div class="flex justify-between text-sm mb-1 text-gray-300">
+                            <span>硬盘使用</span>
+                            <span class="font-mono text-white" id="detailDiskUsage">0 GB / 0 GB</span>
+                        </div>
+                        <div class="w-full progress-bar-bg rounded-full h-3">
+                            <div class="bg-green-500 h-3 rounded-full progress-bar" id="detailDiskBar" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <!-- Network Charts -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                        <div>
+                            <h4 class="text-lg font-semibold text-gray-200 mb-3">下载速度 (KB/s)</h4>
+                            <canvas id="downloadChart"></canvas>
+                        </div>
+                        <div>
+                            <h4 class="text-lg font-semibold text-gray-200 mb-3">上传速度 (KB/s)</h4>
+                            <canvas id="uploadChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="pt-4 border-t border-gray-700/50 flex justify-between items-center text-sm text-gray-300">
+                        <div class="flex items-center space-x-2"><i data-lucide="bar-chart-3" class="w-4 h-4"></i><span>总上传: <span id="detailTotalNetUp" class="font-mono text-red-400">0 GB</span></span></div>
+                        <div class="flex items-center space-x-2"><i data-lucide="bar-chart-3" class="w-4 h-4"></i><span>总下载: <span id="detailTotalNetDown" class="font-mono text-cyan-400">0 GB</span></span></div>
+                    </div>
+                    <div class="text-xs text-gray-500 flex justify-between items-center">
+                        <span class="flex items-center space-x-2"><i data-lucide="clock" class="w-4 h-4"></i><span id="detailUptime">在线 0 天</span></span>
+                        <span class="flex items-center space-x-2"><i data-lucide="repeat" class="w-4 h-4"></i><span id="detailResetInfo">每月1日重置</span></span>
+                    </div>
+                    <div class="pt-1 text-xs text-gray-400 flex items-center space-x-2">
+                        <i data-lucide="calendar" class="w-4 h-4"></i><span id="detailExpirationInfo" class="font-mono"></span>
+                    </div>
                 </div>
             </div>
             
-            <div class="flex justify-end mt-8">
+            <div class="flex justify-end mt-8 flex-shrink-0">
                 <button data-action="close-detail" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg">关闭</button>
             </div>
         </div>
