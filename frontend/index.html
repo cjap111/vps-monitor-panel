@@ -228,6 +228,88 @@
         </div>
     </div>
 
+    <!-- Server Detail Modal -->
+    <div id="serverDetailModal" class="fixed inset-0 z-50 flex items-center justify-center hidden modal-backdrop overflow-y-auto">
+        <div class="bg-[#2c2c2c] rounded-lg shadow-xl p-8 w-full max-w-2xl m-4 border border-gray-600">
+            <div class="flex justify-between items-start mb-6">
+                <div>
+                    <h3 id="detailServerName" class="text-2xl font-bold text-white mb-2">服务器详情</h3>
+                    <div class="text-sm text-gray-400 flex items-center space-x-2">
+                        <i data-lucide="map-pin" class="w-4 h-4"></i>
+                        <span id="detailServerLocation"></span>
+                        <span id="detailServerOS" class="ml-4"></span>
+                    </div>
+                </div>
+                <button data-action="close-detail" class="text-gray-400 hover:text-white"><i data-lucide="x" class="w-6 h-6"></i></button>
+            </div>
+
+            <div class="space-y-6">
+                <!-- CPU -->
+                <div>
+                    <div class="flex justify-between text-sm mb-1 text-gray-300">
+                        <span>CPU 使用率</span>
+                        <span class="font-mono text-white" id="detailCpuUsage">0%</span>
+                    </div>
+                    <div class="w-full progress-bar-bg rounded-full h-3">
+                        <div class="bg-blue-500 h-3 rounded-full progress-bar" id="detailCpuBar" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <!-- Memory -->
+                <div>
+                    <div class="flex justify-between text-sm mb-1 text-gray-300">
+                        <span>内存使用</span>
+                        <span class="font-mono text-white" id="detailMemUsage">0 MB / 0 MB</span>
+                    </div>
+                    <div class="w-full progress-bar-bg rounded-full h-3">
+                        <div class="bg-purple-500 h-3 rounded-full progress-bar" id="detailMemBar" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <!-- Disk -->
+                <div>
+                    <div class="flex justify-between text-sm mb-1 text-gray-300">
+                        <span>硬盘使用</span>
+                        <span class="font-mono text-white" id="detailDiskUsage">0 GB / 0 GB</span>
+                    </div>
+                    <div class="w-full progress-bar-bg rounded-full h-3">
+                        <div class="bg-green-500 h-3 rounded-full progress-bar" id="detailDiskBar" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <!-- Network Charts -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                    <div>
+                        <h4 class="text-lg font-semibold text-gray-200 mb-3">下载速度 (KB/s)</h4>
+                        <canvas id="downloadChart"></canvas>
+                    </div>
+                    <div>
+                        <h4 class="text-lg font-semibold text-gray-200 mb-3">上传速度 (KB/s)</h4>
+                        <canvas id="uploadChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="pt-4 border-t border-gray-700/50 flex justify-between items-center text-sm text-gray-300">
+                    <div class="flex items-center space-x-2"><i data-lucide="bar-chart-3" class="w-4 h-4"></i><span>总上传: <span id="detailTotalNetUp" class="font-mono text-red-400">0 GB</span></span></div>
+                    <div class="flex items-center space-x-2"><i data-lucide="bar-chart-3" class="w-4 h-4"></i><span>总下载: <span id="detailTotalNetDown" class="font-mono text-cyan-400">0 GB</span></span></div>
+                </div>
+                <div class="text-xs text-gray-500 flex justify-between items-center">
+                    <span class="flex items-center space-x-2"><i data-lucide="clock" class="w-4 h-4"></i><span id="detailUptime">在线 0 天</span></span>
+                    <span class="flex items-center space-x-2"><i data-lucide="repeat" class="w-4 h-4"></i><span id="detailResetInfo">每月1日重置</span></span>
+                </div>
+                 <div class="pt-1 text-xs text-gray-400 flex items-center space-x-2">
+                    <i data-lucide="calendar" class="w-4 h-4"></i><span id="detailExpirationInfo" class="font-mono"></span>
+                </div>
+            </div>
+            
+            <div class="flex justify-end mt-8">
+                <button data-action="close-detail" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg">关闭</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             lucide.createIcons();
@@ -240,6 +322,17 @@
             const API_ENDPOINT = `${window.location.protocol}//${window.location.host}/api`;
             const GB_IN_BYTES = 1024 * 1024 * 1024;
             const MB_IN_BYTES = 1024 * 1024;
+
+            // Chart.js instances and data history
+            let downloadChartInstance = null;
+            let uploadChartInstance = null;
+            const chartDataPoints = 60; // Keep history for 60 seconds (assuming 1s interval)
+            let networkHistory = {
+                labels: Array.from({length: chartDataPoints}, (_, i) => i % 10 === 0 ? `-${chartDataPoints - i}s` : ''),
+                download: Array(chartDataPoints).fill(0),
+                upload: Array(chartDataPoints).fill(0)
+            };
+            let detailViewInterval = null; // Interval for detail view updates
 
             // Function to display custom messages instead of alert()
             function showMessage(title, message) {
@@ -432,6 +525,7 @@
             const settingsModal = document.getElementById('serverSettingsModal');
             const deleteModal = document.getElementById('deleteServerModal');
             const messageModal = document.getElementById('messageModal'); // Get the new message modal
+            const detailModal = document.getElementById('serverDetailModal'); // Get the new detail modal
 
             document.getElementById('addServerBtn').addEventListener('click', () => {
                 const command = `curl -sL https://raw.githubusercontent.com/cjap111/vps-monitor-panel/main/install.sh | bash -s -- 2`;
@@ -442,25 +536,50 @@
 
             document.body.addEventListener('click', (e) => {
                 const actionTarget = e.target.closest('[data-action]');
-                if (!actionTarget) return;
+                const card = e.target.closest('[data-server-id]');
 
-                const action = actionTarget.dataset.action;
-                const modal = actionTarget.closest('.modal-backdrop');
+                // Handle closing modals
+                if (actionTarget) {
+                    const action = actionTarget.dataset.action;
+                    const modal = actionTarget.closest('.modal-backdrop');
 
-                if (action === 'close' && modal) {
-                    modal.style.display = 'none';
-                } else if (action === 'close-message' && messageModal) { // Handle closing of the new message modal
-                    messageModal.style.display = 'none';
+                    if (action === 'close' && modal) {
+                        modal.style.display = 'none';
+                    } else if (action === 'close-message' && messageModal) {
+                        messageModal.style.display = 'none';
+                    } else if (action === 'close-detail' && detailModal) {
+                        detailModal.style.display = 'none';
+                        clearInterval(detailViewInterval); // Stop refreshing detail data
+                        detailViewInterval = null;
+                        // Destroy chart instances when modal closes
+                        if (downloadChartInstance) {
+                            downloadChartInstance.destroy();
+                            downloadChartInstance = null;
+                        }
+                        if (uploadChartInstance) {
+                            uploadChartInstance.destroy();
+                            uploadChartInstance = null;
+                        }
+                        // Reset network history
+                        networkHistory.labels = Array.from({length: chartDataPoints}, (_, i) => i % 10 === 0 ? `-${chartDataPoints - i}s` : '');
+                        networkHistory.download = Array(chartDataPoints).fill(0);
+                        networkHistory.upload = Array(chartDataPoints).fill(0);
+                    }
                 }
                 
-                const card = e.target.closest('[data-server-id]');
-                if (!card) return;
-
-                const serverId = card.dataset.serverId;
-                if (action === 'settings') {
-                    openSettingsModal(serverId);
-                } else if (action === 'delete') {
-                    openDeleteModal(serverId);
+                // Handle card clicks for detail view, settings, and delete
+                if (card) {
+                    const serverId = card.dataset.serverId;
+                    if (actionTarget) { // If a data-action button was clicked
+                        const action = actionTarget.dataset.action;
+                        if (action === 'settings') {
+                            openSettingsModal(serverId);
+                        } else if (action === 'delete') {
+                            openDeleteModal(serverId);
+                        }
+                    } else { // If the card itself was clicked (not a button inside it)
+                        openServerDetailModal(serverId);
+                    }
                 }
             });
 
@@ -491,6 +610,236 @@
                 document.getElementById('deleteServerId').value = serverId;
                 deleteModal.style.display = 'flex';
             }
+
+            // Function to open server detail modal
+            function openServerDetailModal(serverId) {
+                const server = servers.find(s => s.id === serverId);
+                if (!server) return;
+
+                // Reset network history for new chart
+                networkHistory = {
+                    labels: Array.from({length: chartDataPoints}, (_, i) => i % 10 === 0 ? `-${chartDataPoints - i}s` : ''),
+                    download: Array(chartDataPoints).fill(0),
+                    upload: Array(chartDataPoints).fill(0)
+                };
+
+                // Populate initial data for the modal
+                updateDetailModalData(server);
+                initDetailCharts(); // Initialize charts before first data fetch
+
+                detailModal.style.display = 'flex';
+                lucide.createIcons();
+
+                // Start fetching and updating detail data every second
+                if (detailViewInterval) { // Clear existing interval if any
+                    clearInterval(detailViewInterval);
+                }
+                detailViewInterval = setInterval(() => fetchServerDetail(serverId), 1000); // Fetch every 1 second
+            }
+
+            // Function to fetch single server detail (for detail modal)
+            async function fetchServerDetail(serverId) {
+                try {
+                    const response = await fetch(`${API_ENDPOINT}/servers`); // Fetch all servers, then find the specific one
+                    if (!response.ok) {
+                        throw new Error(`HTTP Error: ${response.status} - ${response.statusText}`);
+                    }
+                    const serverList = await response.json();
+                    const server = serverList.find(s => s.id === serverId);
+
+                    if (server) {
+                        updateDetailModalData(server);
+                        updateDetailCharts(server);
+                    } else {
+                        // Server might have been deleted or gone offline
+                        clearInterval(detailViewInterval);
+                        detailModal.style.display = 'none';
+                        showMessage('服务器已移除', '您尝试查看的服务器已不再可用。');
+                        fetchAndRenderServers(); // Refresh main grid
+                    }
+                } catch (error) {
+                    console.error(`Error fetching server detail for ${serverId}:`, error);
+                    // Optionally display an error within the modal or close it
+                    clearInterval(detailViewInterval);
+                    detailModal.style.display = 'none';
+                    showMessage('加载失败', `无法加载服务器详细信息: ${error.message}`);
+                    fetchAndRenderServers(); // Refresh main grid
+                }
+            }
+
+            // Function to update static data in detail modal
+            function updateDetailModalData(server) {
+                document.getElementById('detailServerName').textContent = server.name;
+                document.getElementById('detailServerLocation').textContent = server.location;
+                document.getElementById('detailServerOS').textContent = server.os;
+
+                const detailCpuUsage = server.cpu ? server.cpu.toFixed(1) : 0;
+                document.getElementById('detailCpuUsage').textContent = `${detailCpuUsage}%`;
+                document.getElementById('detailCpuBar').style.width = `${detailCpuUsage}%`;
+
+                const detailMemUsed = server.mem ? server.mem.used : 0;
+                const detailMemTotal = server.mem ? server.mem.total : 0;
+                const detailMemUsagePercent = detailMemTotal > 0 ? (detailMemUsed / detailMemTotal * 100).toFixed(1) : 0;
+                document.getElementById('detailMemUsage').textContent = `${detailMemUsed} MB / ${detailMemTotal} MB`;
+                document.getElementById('detailMemBar').style.width = `${detailMemUsagePercent}%`;
+
+                const detailDiskUsedMB = server.disk ? server.disk.used : 0;
+                const detailDiskTotalMB = server.disk ? server.disk.total : 0;
+                const detailDiskUsedGB = (detailDiskUsedMB / 1024).toFixed(2);
+                const detailDiskTotalGB = (detailDiskTotalMB / 1024).toFixed(2);
+                const detailDiskUsagePercent = detailDiskTotalMB > 0 ? (detailDiskUsedMB / detailDiskTotalMB * 100).toFixed(1) : 0;
+                document.getElementById('detailDiskUsage').textContent = `${detailDiskUsedGB} GB / ${detailDiskTotalGB} GB`;
+                document.getElementById('detailDiskBar').style.width = `${detailDiskUsagePercent}%`;
+
+                const detailTotalNetUpGB = (server.totalNet.up / GB_IN_BYTES).toFixed(2);
+                const detailTotalNetDownGB = (server.totalNet.down / GB_IN_BYTES).toFixed(2);
+                document.getElementById('detailTotalNetUp').textContent = `${detailTotalNetUpGB} GB`;
+                document.getElementById('detailTotalNetDown').textContent = `${detailTotalNetDownGB} GB`;
+                document.getElementById('detailResetInfo').textContent = `每月${server.resetDay}日重置`;
+
+                const detailUptimeElement = document.getElementById('detailUptime');
+                if (server.startTime) {
+                    const uptimeMs = Date.now() - server.startTime;
+                    const uptimeDays = Math.floor(uptimeMs / (1000 * 60 * 60 * 24));
+                    detailUptimeElement.textContent = `在线 ${uptimeDays} 天`;
+                } else {
+                    detailUptimeElement.textContent = `在线 0 天`;
+                }
+
+                const detailExpirationInfo = document.getElementById('detailExpirationInfo');
+                if (server.expirationDate) {
+                    const expDate = new Date(server.expirationDate);
+                    const now = new Date();
+                    now.setHours(0, 0, 0, 0); // Normalize 'now' to start of day
+                    expDate.setHours(0, 0, 0, 0); // Normalize 'expDate' to start of day
+
+                    const diffTime = expDate.getTime() - now.getTime();
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                    if (diffDays > 0) {
+                        detailExpirationInfo.textContent = `到期日期: 剩余 ${diffDays} 天`;
+                        if (diffDays <= 7) {
+                            detailExpirationInfo.classList.remove('text-green-400');
+                            detailExpirationInfo.classList.add('text-orange-400');
+                        } else {
+                            detailExpirationInfo.classList.remove('text-orange-400', 'text-red-400');
+                            detailExpirationInfo.classList.add('text-green-400');
+                        }
+                    } else if (diffDays === 0) {
+                        detailExpirationInfo.textContent = `到期日期: 今天到期`;
+                        detailExpirationInfo.classList.remove('text-green-400');
+                        detailExpirationInfo.classList.add('text-orange-400');
+                    } else {
+                        detailExpirationInfo.textContent = `到期日期: 已过期 ${Math.abs(diffDays)} 天`;
+                        detailExpirationInfo.classList.remove('text-orange-400', 'text-green-400');
+                        detailExpirationInfo.classList.add('text-red-400');
+                    }
+                } else {
+                    detailExpirationInfo.textContent = '到期日期: 未设置';
+                    detailExpirationInfo.classList.remove('text-orange-400', 'text-red-400', 'text-green-400');
+                    detailExpirationInfo.classList.add('text-gray-400');
+                }
+            }
+
+            // Function to initialize charts in detail modal
+            function initDetailCharts() {
+                const downloadCtx = document.getElementById('downloadChart').getContext('2d');
+                const uploadCtx = document.getElementById('uploadChart').getContext('2d');
+
+                // Destroy existing instances if they exist
+                if (downloadChartInstance) downloadChartInstance.destroy();
+                if (uploadChartInstance) uploadChartInstance.destroy();
+
+                const chartOptions = {
+                    animation: false, // Disable animation for real-time updates
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            type: 'category', // Use 'category' for labels array
+                            labels: networkHistory.labels,
+                            grid: { color: '#3d3d3d' },
+                            ticks: { color: '#888' }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: '#3d3d3d' },
+                            ticks: { color: '#888' }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { enabled: true }
+                    }
+                };
+
+                downloadChartInstance = new Chart(downloadCtx, {
+                    type: 'line',
+                    data: {
+                        labels: networkHistory.labels,
+                        datasets: [{
+                            label: '下载速度 (KB/s)',
+                            data: networkHistory.download,
+                            borderColor: '#06b6d4', // Cyan 500
+                            backgroundColor: 'rgba(6, 182, 212, 0.2)',
+                            fill: true,
+                            tension: 0.1,
+                            pointRadius: 0
+                        }]
+                    },
+                    options: chartOptions
+                });
+
+                uploadChartInstance = new Chart(uploadCtx, {
+                    type: 'line',
+                    data: {
+                        labels: networkHistory.labels,
+                        datasets: [{
+                            label: '上传速度 (KB/s)',
+                            data: networkHistory.upload,
+                            borderColor: '#ef4444', // Red 500
+                            backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                            fill: true,
+                            tension: 0.1,
+                            pointRadius: 0
+                        }]
+                    },
+                    options: chartOptions
+                });
+            }
+
+            // Function to update chart data
+            function updateDetailCharts(server) {
+                const currentDownloadKBps = server.net ? (server.net.down / 1024).toFixed(2) : 0; // Convert B/s to KB/s
+                const currentUploadKBps = server.net ? (server.net.up / 1024).toFixed(2) : 0; // Convert B/s to KB/s
+
+                // Remove oldest data point
+                networkHistory.download.shift();
+                networkHistory.upload.shift();
+
+                // Add new data point
+                networkHistory.download.push(currentDownloadKBps);
+                networkHistory.upload.push(currentUploadKBps);
+
+                // Update labels to show relative time (e.g., -5s, -4s, ..., 0s)
+                networkHistory.labels = Array.from({length: chartDataPoints}, (_, i) => {
+                    const diff = chartDataPoints - 1 - i;
+                    if (diff === 0) return '0s';
+                    if (diff % 10 === 0) return `-${diff}s`;
+                    return '';
+                });
+
+                if (downloadChartInstance && uploadChartInstance) {
+                    downloadChartInstance.data.labels = networkHistory.labels;
+                    downloadChartInstance.data.datasets[0].data = networkHistory.download;
+                    downloadChartInstance.update();
+
+                    uploadChartInstance.data.labels = networkHistory.labels;
+                    uploadChartInstance.data.datasets[0].data = networkHistory.upload;
+                    uploadChartInstance.update();
+                }
+            }
+
 
             document.getElementById('serverSettingsForm').addEventListener('submit', async (e) => {
                 e.preventDefault();
