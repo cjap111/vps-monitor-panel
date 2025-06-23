@@ -35,6 +35,13 @@ try {
                 serverDataStore[id].totalNet = { up: 0, down: 0 };
                 console.warn(`[${new Date().toISOString()}] Initialized missing totalNet for server ${id} on startup.`);
             }
+            // Initialize new fields for traffic limit and calculation mode
+            if (serverDataStore[id].totalTrafficLimit === undefined) {
+                serverDataStore[id].totalTrafficLimit = 0; // Default to 0, meaning no limit set initially
+            }
+            if (serverDataStore[id].trafficCalculationMode === undefined) {
+                serverDataStore[id].trafficCalculationMode = 'bidirectional'; // Default to bidirectional
+            }
         });
         saveData(); // Save updated structure if any initialization happened
     }
@@ -68,14 +75,14 @@ app.get('/', (req, res) => {
 app.post('/api/report', (req, res) => {
     const data = req.body;
     console.log(`[${new Date().toISOString()}] Received report from server ID: ${data.id}`);
-    
+
     if (!data.id) {
         console.error(`[${new Date().toISOString()}] Error: Server ID is required for report.`);
         return res.status(400).send('Server ID is required.');
     }
 
     const now = Date.now();
-    let existingData = serverDataStore[data.id]; 
+    let existingData = serverDataStore[data.id];
 
     // Initialize server data if it's a new server or core data structures are missing
     if (!existingData) {
@@ -98,7 +105,9 @@ app.post('/api/report', (req, res) => {
             expirationDate: null,
             cpuModel: data.cpuModel || null,
             memModel: data.memModel || null,
-            diskModel: data.diskModel || null
+            diskModel: data.diskModel || null,
+            totalTrafficLimit: 0, // Initialize new field for total traffic limit
+            trafficCalculationMode: 'bidirectional' // Initialize new field for calculation mode
         };
         console.log(`[${new Date().toISOString()}] New server ${data.id} added.`);
     } else {
@@ -108,6 +117,13 @@ app.post('/api/report', (req, res) => {
         }
         if (!existingData.totalNet) {
             existingData.totalNet = { up: 0, down: 0 };
+        }
+        // Ensure new fields are present for existing servers loaded from file
+        if (existingData.totalTrafficLimit === undefined) {
+            existingData.totalTrafficLimit = 0;
+        }
+        if (existingData.trafficCalculationMode === undefined) {
+            existingData.trafficCalculationMode = 'bidirectional';
         }
     }
 
@@ -166,7 +182,8 @@ app.post('/api/report', (req, res) => {
         totalNet: existingData.totalNet, // Explicitly keep the updated totalNet
         rawTotalNet: { up: data.rawTotalNet.up, down: data.rawTotalNet.down }, // Crucial: Update rawTotalNet for the next comparison
         lastUpdated: now, // Always update lastUpdated timestamp
-        online: true // Mark as online
+        online: true, // Mark as online
+        // totalTrafficLimit and trafficCalculationMode are preserved from existingData or initialized above
     };
 
     saveData(); // Save data to file
@@ -180,7 +197,7 @@ app.get('/api/servers', (req, res) => {
     // Check online status for all servers - adjusted to 15 seconds threshold for 1-second reporting for better tolerance
     Object.values(serverDataStore).forEach(server => {
         // If no update for more than 15 seconds, consider offline
-        server.online = (now - server.lastUpdated) < 15000; 
+        server.online = (now - server.lastUpdated) < 15000;
     });
     res.json(Object.values(serverDataStore));
 });
@@ -188,9 +205,12 @@ app.get('/api/servers', (req, res) => {
 // POST /api/servers/:id/settings - Update server settings (requires agent installation password)
 app.post('/api/servers/:id/settings', (req, res) => {
     const { id } = req.params;
-    const { totalNetUp, totalNetDown, resetDay, password, expirationDate } = req.body; 
-    
+    // Destructure new fields: totalTrafficLimit and trafficCalculationMode
+    const { totalNetUp, totalNetDown, resetDay, password, expirationDate, totalTrafficLimit, trafficCalculationMode } = req.body;
+
     console.log(`[${new Date().toISOString()}] Received settings update for server ID: ${id}`);
+    console.log(`[${new Date().toISOString()}] New settings: totalTrafficLimit=${totalTrafficLimit}, trafficCalculationMode=${trafficCalculationMode}`);
+
 
     // Validate agent installation password
     if (!password || password !== AGENT_INSTALL_PASSWORD) {
@@ -203,6 +223,10 @@ app.post('/api/servers/:id/settings', (req, res) => {
         serverDataStore[id].totalNet.down = totalNetDown;
         serverDataStore[id].resetDay = resetDay;
         serverDataStore[id].expirationDate = expirationDate; // Save expiration date
+        // Save new traffic limit and calculation mode
+        serverDataStore[id].totalTrafficLimit = totalTrafficLimit;
+        serverDataStore[id].trafficCalculationMode = trafficCalculationMode;
+
         // Note: cpuModel, memModel, diskModel, rawTotalNet are not updated via settings route, they are only updated by agent reports.
         saveData(); // Save data
         console.log(`[${new Date().toISOString()}] Server ${id} settings updated successfully.`);
@@ -281,10 +305,10 @@ function checkAndResetTraffic() {
 }
 
 // Start the server and set up hourly traffic reset check
-app.listen(PORT, '0.0.0.0', () => { 
-    console.log(`[${new Date().toISOString()}] Monitor backend server running on http://0.0.0.0:${PORT}`); 
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`[${new Date().toISOString()}] Monitor backend server running on http://0.0.0.0:${PORT}`);
     // Check for traffic reset hourly
-    setInterval(checkAndResetTraffic, 1000 * 60 * 60); 
+    setInterval(checkAndResetTraffic, 1000 * 60 * 60);
     // Run check immediately on startup
     checkAndResetTraffic();
 });
