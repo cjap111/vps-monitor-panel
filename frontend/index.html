@@ -776,16 +776,16 @@
                     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
                     if (diffDays > 0) {
-                        expirationInfo.textContent = `到期日期: 剩余 ${diffDays} 天`;
+                        detailExpirationInfo.textContent = `到期日期: 剩余 ${diffDays} 天`;
                         if (diffDays <= 7) {
-                            expirationInfo.classList.remove('text-green-400');
-                            expirationInfo.classList.add('text-orange-400');
+                            detailExpirationInfo.classList.remove('text-green-400');
+                            detailExpirationInfo.classList.add('text-orange-400');
                         } else {
-                            expirationInfo.classList.remove('text-orange-400', 'text-red-400');
-                            expirationInfo.classList.add('text-green-400');
+                            detailExpirationInfo.classList.remove('text-orange-400', 'text-red-400');
+                            detailExpirationInfo.classList.add('text-green-400');
                         }
                     } else if (diffDays === 0) {
-                        expirationInfo.textContent = `到期日期: 今天到期`;
+                        detailExpirationInfo.textContent = `到期日期: 今天到期`;
                         expirationInfo.classList.remove('text-green-400');
                         expirationInfo.classList.add('text-orange-400');
                     } else {
