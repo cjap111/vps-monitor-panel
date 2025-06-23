@@ -815,8 +815,8 @@
                 const detailDiskUsagePercent = diskTotalMB > 0 ? (diskUsedMB / diskTotalMB * 100).toFixed(1) : 0;
                 const detailDiskUsageElement = document.getElementById('detailDiskUsage');
                 const detailDiskBarElement = document.getElementById('detailDiskBar');
-                if (detailDiskUsageElement) detailDiskUsageElement.textContent = `${diskUsedGB} GB / ${diskTotalGB} GB`;
-                if (detailDiskBarElement) detailDiskBarElement.style.width = `${diskUsagePercent}%`;
+                if (detailDiskUsageElement) detailDiskUsageElement.textContent = `${diskUsedGB} GB / ${detailDiskTotalGB} GB`;
+                if (detailDiskBarElement) detailDiskBarElement.style.width = `${detailDiskUsagePercent}%`;
 
 
                 const detailTotalNetUpGB = (server.totalNet && typeof server.totalNet.up === 'number') ? (server.totalNet.up / GB_IN_BYTES).toFixed(2) : '0.00';
