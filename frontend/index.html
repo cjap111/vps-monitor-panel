@@ -151,7 +151,7 @@
                 </div>
                 <div class="flex justify-between items-center pl-1">
                     <span class="flex items-center space-x-1.5 text-red-400"><i data-lucide="arrow-up" class="w-3 h-3"></i><span data-id="total-net-up" class="font-mono">0 GB</span></span>
-                    <span class="flex items-center space-x-1.5 text-cyan-400"><i data-lucide="arrow-down" class="w-3 h-3"></i><span data-id="total-net-down" class="font-mono">0 GB</span></span>
+                    <span class="flex items-center space-x-1.5 text-cyan-400"><i data-lucide="arrow-down" class="w-3 h-3"></i><span class="font-mono">0 GB</span></span>
                 </div>
                  <!-- 新增的到期日期显示 -->
                 <div class="flex justify-between items-center pl-1 pt-1">
@@ -297,6 +297,10 @@
                         <div class="w-full progress-bar-bg rounded-full h-3">
                             <div class="bg-purple-500 h-3 rounded-full progress-bar" id="detailMemBar" style="width: 0%"></div>
                         </div>
+                        <div class="text-sm text-gray-400 mt-2">
+                             <i data-lucide="hard-drive" class="w-4 h-4 inline-block align-middle mr-2"></i>
+                            <span id="detailMemModel">内存型号: N/A</span>
+                        </div>
                     </div>
 
                     <!-- Disk -->
@@ -307,6 +311,10 @@
                         </div>
                         <div class="w-full progress-bar-bg rounded-full h-3">
                             <div class="bg-green-500 h-3 rounded-full progress-bar" id="detailDiskBar" style="width: 0%"></div>
+                        </div>
+                         <div class="text-sm text-gray-400 mt-2">
+                            <i data-lucide="hard-drive" class="w-4 h-4 inline-block align-middle mr-2"></i>
+                            <span id="detailDiskModel">硬盘型号: N/A</span>
                         </div>
                     </div>
 
@@ -718,6 +726,10 @@
                 document.getElementById('detailServerOS').textContent = server.os;
                 // Add CPU Model
                 document.getElementById('detailCpuModel').textContent = `CPU 型号: ${server.cpuModel || 'N/A'}`;
+                // Add Memory Model
+                document.getElementById('detailMemModel').textContent = `内存型号: ${server.memModel || 'N/A'}`;
+                // Add Disk Model
+                document.getElementById('detailDiskModel').textContent = `硬盘型号: ${server.diskModel || 'N/A'}`;
 
 
                 const detailCpuUsage = server.cpu ? server.cpu.toFixed(1) : 0;
@@ -764,25 +776,25 @@
                     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
                     if (diffDays > 0) {
-                        detailExpirationInfo.textContent = `到期日期: 剩余 ${diffDays} 天`;
+                        expirationInfo.textContent = `到期日期: 剩余 ${diffDays} 天`;
                         if (diffDays <= 7) {
-                            detailExpirationInfo.classList.remove('text-green-400');
-                            detailExpirationInfo.classList.add('text-orange-400');
+                            expirationInfo.classList.remove('text-green-400');
+                            expirationInfo.classList.add('text-orange-400');
                         } else {
-                            detailExpirationInfo.classList.remove('text-orange-400', 'text-red-400');
-                            detailExpirationInfo.classList.add('text-green-400');
+                            expirationInfo.classList.remove('text-orange-400', 'text-red-400');
+                            expirationInfo.classList.add('text-green-400');
                         }
                     } else if (diffDays === 0) {
-                        detailExpirationInfo.textContent = `到期日期: 今天到期`;
-                        detailExpirationInfo.classList.remove('text-green-400');
-                        detailExpirationInfo.classList.add('text-orange-400');
+                        expirationInfo.textContent = `到期日期: 今天到期`;
+                        expirationInfo.classList.remove('text-green-400');
+                        expirationInfo.classList.add('text-orange-400');
                     } else {
-                        detailExpirationInfo.textContent = `到期日期: 已过期 ${Math.abs(diffDays)} 天`;
-                        detailExpirationInfo.classList.remove('text-orange-400', 'text-green-400');
-                        detailExpirationInfo.classList.add('text-red-400');
+                        expirationInfo.textContent = `到期日期: 已过期 ${Math.abs(diffDays)} 天`;
+                        expirationInfo.classList.remove('text-orange-400', 'text-green-400');
+                        expirationInfo.classList.add('text-red-400');
                     }
                 } else {
-                    detailExpirationInfo.textContent = '到期日期: 未设置';
+                    expirationInfo.textContent = '到期日期: 未设置';
                     expirationInfo.classList.remove('text-orange-400', 'text-red-400', 'text-green-400');
                     expirationInfo.classList.add('text-gray-400');
                 }
