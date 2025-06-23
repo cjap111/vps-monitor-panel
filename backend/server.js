@@ -177,10 +177,10 @@ app.post('/api/report', (req, res) => {
 app.get('/api/servers', (req, res) => {
     console.log(`[${new Date().toISOString()}] Request received for server list.`);
     const now = Date.now();
-    // Check online status for all servers - adjusted to 5 seconds threshold for 1-second reporting
+    // Check online status for all servers - adjusted to 15 seconds threshold for 1-second reporting for better tolerance
     Object.values(serverDataStore).forEach(server => {
-        // If no update for more than 5 seconds, consider offline
-        server.online = (now - server.lastUpdated) < 5000; 
+        // If no update for more than 15 seconds, consider offline
+        server.online = (now - server.lastUpdated) < 15000; 
     });
     res.json(Object.values(serverDataStore));
 });
