@@ -309,11 +309,11 @@
                     <!-- Network Charts -->
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
                         <div class="chart-container">
-                            <h4 class="text-lg font-semibold text-gray-200 mb-3">下载速度 (KB/s)</h4>
+                            <h4 class="text-lg font-semibold text-gray-200 mb-3" id="downloadChartTitle">下载速度</h4>
                             <canvas id="downloadChart"></canvas>
                         </div>
                         <div class="chart-container">
-                            <h4 class="text-lg font-semibold text-gray-200 mb-3">上传速度 (KB/s)</h4>
+                            <h4 class="text-lg font-semibold text-gray-200 mb-3" id="uploadChartTitle">上传速度</h4>
                             <canvas id="uploadChart"></canvas>
                         </div>
                     </div>
@@ -372,19 +372,25 @@
                 lucide.createIcons(); // Re-create icons if the modal content changes
             }
 
+            // Enhanced formatBytes to dynamically choose unit (Bytes, KB, MB, GB, TB)
             const formatBytes = (bytes, decimals = 2) => {
                 if (bytes === 0) return '0 Bytes';
                 const k = 1024;
                 const dm = decimals < 0 ? 0 : decimals;
                 const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
                 const i = Math.floor(Math.log(bytes) / Math.log(k));
-                return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)); // Return just the number for dynamic speed
             };
             
-            const formatSpeed = (bytes) => {
-                 if (bytes === 0) return '0 KB/s';
-                 return `${formatBytes(bytes, 2)}/s`;
-            }
+            // New formatSpeed function to return value and unit separately
+            const formatSpeedWithUnit = (bytes) => {
+                if (bytes === 0) return { value: 0, unit: 'B/s' };
+                const k = 1024;
+                const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s', 'TB/s'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return { value: parseFloat((bytes / Math.pow(k, i)).toFixed(2)), unit: sizes[i] };
+            };
+
 
             // Function to update a single server card
             function updateServerCard(cardElement, server) {
@@ -434,11 +440,15 @@
                 cardElement.querySelector('[data-id="disk-usage"]').textContent = `${diskUsedGB} GB / ${diskTotalGB} GB`;
                 cardElement.querySelector('[data-id="disk-bar"]').style.width = `${diskUsagePercent}%`;
 
-                // Update Network Speed
+                // Update Network Speed with dynamic units
                 const netDown = server.net ? server.net.down : 0;
                 const netUp = server.net ? server.net.up : 0;
-                cardElement.querySelector('[data-id="net-down"]').textContent = formatSpeed(netDown);
-                cardElement.querySelector('[data-id="net-up"]').textContent = formatSpeed(netUp);
+                const formattedNetDown = formatSpeedWithUnit(netDown);
+                const formattedNetUp = formatSpeedWithUnit(netUp);
+
+                cardElement.querySelector('[data-id="net-down"]').textContent = `${formattedNetDown.value} ${formattedNetDown.unit}`;
+                cardElement.querySelector('[data-id="net-up"]').textContent = `${formattedNetUp.value} ${formattedNetUp.unit}`;
+
 
                 // Update Uptime
                 const startTime = server.startTime;
@@ -799,16 +809,31 @@
                     },
                     plugins: {
                         legend: { display: false },
-                        tooltip: { enabled: true }
+                        tooltip: { 
+                            enabled: true,
+                            callbacks: {
+                                label: function(context) {
+                                    // Custom tooltip label to show dynamic unit
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    const value = context.parsed.y;
+                                    const unit = context.chart.options.scales.y.unit || ''; // Get unit from y-axis options
+                                    return label + `${value} ${unit}`;
+                                }
+                            }
+                        }
                     }
                 };
 
+                // Initialize with specific units that will be updated dynamically
                 downloadChartInstance = new Chart(downloadCtx, {
                     type: 'line',
                     data: {
                         labels: networkHistory.labels,
                         datasets: [{
-                            label: '下载速度 (KB/s)',
+                            label: '下载速度', // Label for tooltip
                             data: networkHistory.download,
                             borderColor: '#06b6d4', // Cyan 500
                             backgroundColor: 'rgba(6, 182, 212, 0.2)',
@@ -817,7 +842,17 @@
                             pointRadius: 0
                         }]
                     },
-                    options: chartOptions
+                    options: {
+                        ...chartOptions,
+                        scales: {
+                            ...chartOptions.scales,
+                            y: {
+                                ...chartOptions.scales.y,
+                                // Add a unit property to y-axis options for custom tooltip
+                                unit: 'B/s' // Initial unit
+                            }
+                        }
+                    }
                 });
 
                 uploadChartInstance = new Chart(uploadCtx, {
@@ -825,7 +860,7 @@
                     data: {
                         labels: networkHistory.labels,
                         datasets: [{
-                            label: '上传速度 (KB/s)',
+                            label: '上传速度', // Label for tooltip
                             data: networkHistory.upload,
                             borderColor: '#ef4444', // Red 500
                             backgroundColor: 'rgba(239, 68, 68, 0.2)',
@@ -834,22 +869,51 @@
                             pointRadius: 0
                         }]
                     },
-                    options: chartOptions
+                    options: {
+                        ...chartOptions,
+                        scales: {
+                            ...chartOptions.scales,
+                            y: {
+                                ...chartOptions.scales.y,
+                                // Add a unit property to y-axis options for custom tooltip
+                                unit: 'B/s' // Initial unit
+                            }
+                        }
+                    }
                 });
+            }
+
+            // Function to dynamically format speed for charts and update chart titles
+            function formatSpeedForChart(bytes) {
+                if (bytes === 0) return { value: 0, unit: 'B/s', rawValue: 0 };
+                const k = 1024;
+                const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s', 'TB/s'];
+                let i = 0;
+                while (bytes >= k && i < sizes.length - 1) {
+                    bytes /= k;
+                    i++;
+                }
+                return { value: parseFloat(bytes.toFixed(2)), unit: sizes[i], rawValue: bytes };
             }
 
             // Function to update chart data
             function updateDetailCharts(server) {
-                const currentDownloadKBps = server.net ? (server.net.down / 1024).toFixed(2) : 0; // Convert B/s to KB/s
-                const currentUploadKBps = server.net ? (server.net.up / 1024).toFixed(2) : 0; // Convert B/s to KB/s
+                const rawDownloadBytes = server.net ? server.net.down : 0;
+                const rawUploadBytes = server.net ? server.net.up : 0;
 
-                // Remove oldest data point
+                const formattedDownload = formatSpeedForChart(rawDownloadBytes);
+                const formattedUpload = formatSpeedForChart(rawUploadBytes);
+
+                // Update chart titles with current dynamic unit
+                document.getElementById('downloadChartTitle').textContent = `下载速度 (${formattedDownload.unit})`;
+                document.getElementById('uploadChartTitle').textContent = `上传速度 (${formattedUpload.unit})`;
+
+
+                // Remove oldest data point and add new data point
                 networkHistory.download.shift();
                 networkHistory.upload.shift();
-
-                // Add new data point
-                networkHistory.download.push(currentDownloadKBps);
-                networkHistory.upload.push(currentUploadKBps);
+                networkHistory.download.push(formattedDownload.rawValue); // Push raw value for consistent Y-axis scaling
+                networkHistory.upload.push(formattedUpload.rawValue);
 
                 // Update labels to show relative time (e.g., -5s, -4s, ..., 0s)
                 networkHistory.labels = Array.from({length: chartDataPoints}, (_, i) => {
@@ -860,6 +924,10 @@
                 });
 
                 if (downloadChartInstance && uploadChartInstance) {
+                    // Update Y-axis unit for tooltip
+                    downloadChartInstance.options.scales.y.unit = formattedDownload.unit;
+                    uploadChartInstance.options.scales.y.unit = formattedUpload.unit;
+
                     downloadChartInstance.data.labels = networkHistory.labels;
                     downloadChartInstance.data.datasets[0].data = networkHistory.download;
                     downloadChartInstance.update();
