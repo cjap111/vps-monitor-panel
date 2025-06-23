@@ -15,6 +15,10 @@ OS=$(hostnamectl | grep "Operating System" | cut -d: -f2 | xargs)
 # 获取CPU使用率 (百分比)
 CPU_USAGE=$(top -bn1 | grep "Cpu(s)" | sed "s/.*, *\([0-9.]*\)%* id.*/\1/" | awk '{print 100 - $1}' || echo 0)
 
+# 获取CPU型号
+# 尝试使用 lscpu 获取 CPU 型号，如果不存在则回退到 /proc/cpuinfo
+CPU_MODEL=$(lscpu | grep "Model name" | cut -d: -f2 | xargs || cat /proc/cpuinfo | grep 'model name' | head -n 1 | cut -d: -f2 | xargs || echo "Unknown CPU")
+
 # 获取内存信息 (单位：兆字节 MB)
 MEM_INFO=$(free -m | grep Mem)
 MEM_TOTAL=$(echo $MEM_INFO | awk '{print $2}' || echo 0)
@@ -55,6 +59,7 @@ JSON_PAYLOAD=$(cat <<EOF
   "location": "$SERVER_LOCATION",
   "os": "$OS",
   "cpu": $CPU_USAGE,
+  "cpuModel": "$CPU_MODEL",
   "mem": { "total": $MEM_TOTAL, "used": $MEM_USED },
   "disk": { "total": $DISK_TOTAL, "used": $DISK_USED },
   "net": { "up": $NET_UP_BPS, "down": $NET_DOWN_BPS },
