@@ -25,6 +25,18 @@ try {
         const data = fs.readFileSync(DB_FILE, 'utf8');
         serverDataStore = JSON.parse(data);
         console.log(`Data successfully loaded from ${DB_FILE}.`);
+        // Ensure old data has rawTotalNet and totalNet initialized correctly on load if missing
+        Object.keys(serverDataStore).forEach(id => {
+            if (!serverDataStore[id].rawTotalNet) {
+                serverDataStore[id].rawTotalNet = { up: 0, down: 0 };
+                console.warn(`[${new Date().toISOString()}] Initialized missing rawTotalNet for server ${id} on startup.`);
+            }
+            if (!serverDataStore[id].totalNet) {
+                serverDataStore[id].totalNet = { up: 0, down: 0 };
+                console.warn(`[${new Date().toISOString()}] Initialized missing totalNet for server ${id} on startup.`);
+            }
+        });
+        saveData(); // Save updated structure if any initialization happened
     }
 } catch (err) {
     console.error("Error loading data from file:", err);
@@ -54,18 +66,19 @@ app.get('/', (req, res) => {
 
 // POST /api/report - Receive monitoring data from agents
 app.post('/api/report', (req, res) => {
-    console.log(`[${new Date().toISOString()}] Received report from server ID: ${req.body.id}`); // Added log for incoming reports
     const data = req.body;
+    console.log(`[${new Date().toISOString()}] Received report from server ID: ${data.id}`); // Added log for incoming reports
+    
     if (!data.id) {
         console.error(`[${new Date().toISOString()}] Error: Server ID is required for report.`); // Added error log
         return res.status(400).send('Server ID is required.');
     }
 
     const now = Date.now();
-    let existingData = serverDataStore[data.id]; // Use 'let' to allow reassignment
+    let existingData = serverDataStore[data.id]; 
 
-    // Initialize server data if it's a new server or data is malformed
-    if (!existingData || !existingData.totalNet || !existingData.rawTotalNet) {
+    // Initialize server data if it's a new server or core data structures are missing
+    if (!existingData) {
         existingData = {
             id: data.id,
             name: data.name,
@@ -75,7 +88,7 @@ app.post('/api/report', (req, res) => {
             mem: data.mem,
             disk: data.disk,
             net: data.net, // Current network speed
-            rawTotalNet: { up: data.rawTotalNet.up, down: data.rawTotalNet.down }, // Initialize with current raw data
+            rawTotalNet: { up: data.rawTotalNet ? data.rawTotalNet.up : 0, down: data.rawTotalNet ? data.rawTotalNet.down : 0 }, // Initialize with current raw data, handle potential undefined
             totalNet: { up: 0, down: 0 }, // Initialize accumulated total traffic
             resetDay: 1, // Default reset day
             lastReset: `${new Date().getFullYear()}-${new Date().getMonth() + 1}`,
@@ -87,25 +100,37 @@ app.post('/api/report', (req, res) => {
             memModel: data.memModel || null,
             diskModel: data.diskModel || null
         };
-        console.log(`[${new Date().toISOString()}] New server ${data.id} added or re-initialized due to missing data.`);
+        console.log(`[${new Date().toISOString()}] New server ${data.id} added.`);
+    } else {
+        // Ensure existing data has rawTotalNet and totalNet for calculations
+        if (!existingData.rawTotalNet) {
+            existingData.rawTotalNet = { up: 0, down: 0 };
+        }
+        if (!existingData.totalNet) {
+            existingData.totalNet = { up: 0, down: 0 };
+        }
     }
 
     let upBytesSinceLast = 0;
     let downBytesSinceLast = 0;
+
+    // Log raw counters before calculation for debugging
+    console.log(`[${new Date().toISOString()}] Server ${data.id} - Raw Traffic Incoming: Up=${data.rawTotalNet.up}, Down=${data.rawTotalNet.down}`);
+    console.log(`[${new Date().toISOString()}] Server ${data.id} - Raw Traffic Existing: Up=${existingData.rawTotalNet.up}, Down=${existingData.rawTotalNet.down}`);
 
     // Traffic calculation logic for accumulated data:
     // If current raw counter is less than last known raw counter, assume agent reset/reboot.
     // In this case, the current raw counter represents the traffic since the reboot,
     // so we add the current raw value as the increment for this specific interval.
     if (data.rawTotalNet.up < existingData.rawTotalNet.up) {
-        console.warn(`[${new Date().toISOString()}] Server ${data.id}: Upload raw counter reset detected. Adding current reported raw value.`);
+        console.warn(`[${new Date().toISOString()}] Server ${data.id}: Upload raw counter reset detected. Adding current reported raw value as increment.`);
         upBytesSinceLast = data.rawTotalNet.up;
     } else {
         upBytesSinceLast = data.rawTotalNet.up - existingData.rawTotalNet.up;
     }
 
     if (data.rawTotalNet.down < existingData.rawTotalNet.down) {
-        console.warn(`[${new Date().toISOString()}] Server ${data.id}: Download raw counter reset detected. Adding current reported raw value.`);
+        console.warn(`[${new Date().toISOString()}] Server ${data.id}: Download raw counter reset detected. Adding current reported raw value as increment.`);
         downBytesSinceLast = data.rawTotalNet.down;
     } else {
         downBytesSinceLast = data.rawTotalNet.down - existingData.rawTotalNet.down;
@@ -119,10 +144,25 @@ app.post('/api/report', (req, res) => {
     existingData.totalNet.up += upBytesSinceLast;
     existingData.totalNet.down += downBytesSinceLast;
 
+    // Log increments and new total for debugging
+    console.log(`[${new Date().toISOString()}] Server ${data.id} - Increments: Up=${upBytesSinceLast}, Down=${downBytesSinceLast}`);
+    console.log(`[${new Date().toISOString()}] Server ${data.id} - New Total Traffic: Up=${existingData.totalNet.up}, Down=${existingData.totalNet.down}`);
+
+
     // Update serverDataStore with all latest information
     serverDataStore[data.id] = {
         ...existingData, // Preserve existing accumulated data and settings
-        ...data,         // Overwrite with latest dynamic data from agent report (cpu, mem, disk, net)
+        id: data.id, // Explicitly set ID
+        name: data.name, // Update these fields from agent data
+        location: data.location,
+        os: data.os,
+        cpu: data.cpu,
+        mem: data.mem,
+        disk: data.disk,
+        net: data.net, // Current network speed
+        cpuModel: data.cpuModel || existingData.cpuModel, // Update if new, preserve if not
+        memModel: data.memModel || existingData.memModel, // Update if new, preserve if not
+        diskModel: data.diskModel || existingData.diskModel, // Update if new, preserve if not
         totalNet: existingData.totalNet, // Explicitly keep the updated totalNet
         rawTotalNet: { up: data.rawTotalNet.up, down: data.rawTotalNet.down }, // Crucial: Update rawTotalNet for the next comparison
         lastUpdated: now, // Always update lastUpdated timestamp
