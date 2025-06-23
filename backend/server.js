@@ -76,7 +76,8 @@ app.post('/api/report', (req, res) => {
             startTime: now,
             lastUpdated: now,
             online: true,
-            expirationDate: null // Added: Initialize expiration date for new server
+            expirationDate: null, // Added: Initialize expiration date for new server
+            cpuModel: data.cpuModel || null // Added: Initialize cpuModel for new server
         };
         console.log(`[${new Date().toISOString()}] New server ${data.id} added.`); // Log new server addition
     } else {
@@ -101,6 +102,7 @@ app.post('/api/report', (req, res) => {
             ...data,         // Overwrite with latest dynamic data from agent report
             totalNet: existingData.totalNet, // Ensure totalNet is not overwritten
             expirationDate: existingData.expirationDate, // Ensure expirationDate is not overwritten by agent data
+            cpuModel: data.cpuModel || existingData.cpuModel, // Ensure cpuModel is updated if provided, otherwise preserved
             lastUpdated: now,
             online: true
         };
@@ -141,6 +143,7 @@ app.post('/api/servers/:id/settings', (req, res) => {
         serverDataStore[id].totalNet.down = totalNetDown;
         serverDataStore[id].resetDay = resetDay;
         serverDataStore[id].expirationDate = expirationDate; // Save expiration date
+        // Note: cpuModel is not updated via settings route, it's only updated by agent reports.
         saveData(); // Save data
         console.log(`[${new Date().toISOString()}] Server ${id} settings updated successfully.`); // Log success
         res.status(200).send('Settings updated successfully.');
