@@ -98,6 +98,10 @@
                     <span class="flex items-center space-x-1.5 text-red-400"><i data-lucide="arrow-up" class="w-3 h-3"></i><span data-id="total-net-up" class="font-mono">0 GB</span></span>
                     <span class="flex items-center space-x-1.5 text-cyan-400"><i data-lucide="arrow-down" class="w-3 h-3"></i><span data-id="total-net-down" class="font-mono">0 GB</span></span>
                 </div>
+                 <!-- 新增的到期日期显示 -->
+                <div class="flex justify-between items-center pl-1 pt-1">
+                    <span class="flex items-center space-x-1.5 text-orange-300"><i data-lucide="calendar" class="w-3 h-3"></i><span data-id="expiration-info" class="font-mono"></span></span>
+                </div>
             </div>
         </div>
     </template>
@@ -145,6 +149,11 @@
                     <div>
                         <label for="settingsPassword" class="block text-sm font-medium text-gray-300 mb-2">被控端安装密码</label>
                         <input type="password" id="settingsPassword" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:ring-indigo-500 focus:border-indigo-500" required>
+                    </div>
+                    <!-- 新增的到期日期输入框 -->
+                    <div>
+                        <label for="settingExpirationDate" class="block text-sm font-medium text-gray-300 mb-2">到期日期</label>
+                        <input type="date" id="settingExpirationDate" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:ring-indigo-500 focus:border-indigo-500">
                     </div>
                 </div>
                 <div class="flex justify-end space-x-4 mt-8">
@@ -231,8 +240,6 @@
                     const response = await fetch(`${API_ENDPOINT}/servers`);
                     if (!response.ok) {
                         console.error("无法获取服务器数据");
-                        // Optional: show a message if backend is unreachable
-                        // showMessage("错误", "无法连接到后端服务器，请检查后端服务是否运行。");
                         return;
                     }
                     const serverList = await response.json();
@@ -240,7 +247,6 @@
                     renderAllServers();
                 } catch (error) {
                     console.error("获取服务器列表时出错:", error);
-                    // showMessage("错误", "获取服务器列表时发生网络错误：" + error.message);
                 }
             }
 
@@ -305,6 +311,35 @@
                 query("total-net-up").textContent = (serverData.totalNet.up / GB_IN_BYTES).toFixed(2) + ' GB';
                 query("total-net-down").textContent = (serverData.totalNet.down / GB_IN_BYTES).toFixed(2) + ' GB';
                 query("reset-info").textContent = `每月${serverData.resetDay}日重置`;
+
+                // 到期日期逻辑
+                const expirationInfo = query("expiration-info");
+                if (serverData.expirationDate) {
+                    const expirationDate = new Date(serverData.expirationDate);
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0); // 将时间设置为午夜，以便精确计算天数
+
+                    const diffTime = expirationDate.getTime() - today.getTime();
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); // 向上取整，即使剩几个小时也算一天
+
+                    if (diffDays > 0) {
+                        expirationInfo.textContent = `剩余 ${diffDays} 天`;
+                        expirationInfo.closest('.flex').classList.remove('text-red-500'); // 移除过期警告颜色
+                        expirationInfo.closest('.flex').classList.add('text-orange-300'); // 设置正常颜色
+                    } else if (diffDays === 0) {
+                        expirationInfo.textContent = `今天到期`;
+                        expirationInfo.closest('.flex').classList.remove('text-orange-300');
+                        expirationInfo.closest('.flex').classList.add('text-yellow-400'); // 警告颜色
+                    } else {
+                        expirationInfo.textContent = `已过期 ${Math.abs(diffDays)} 天`;
+                        expirationInfo.closest('.flex').classList.remove('text-orange-300');
+                        expirationInfo.closest('.flex').classList.add('text-red-500'); // 危险颜色
+                    }
+                } else {
+                    expirationInfo.textContent = "未设置到期日期";
+                    expirationInfo.closest('.flex').classList.remove('text-red-500', 'text-yellow-400');
+                    expirationInfo.closest('.flex').classList.add('text-gray-500');
+                }
             }
             
             const addModal = document.getElementById('addServerModal');
@@ -313,9 +348,6 @@
             const messageModal = document.getElementById('messageModal'); // Get the new message modal
 
             document.getElementById('addServerBtn').addEventListener('click', () => {
-                // This command should ideally be fetched from the backend or configured dynamically
-                // based on the actual domain setup by the backend's install script.
-                // For now, it's a placeholder.
                 const command = `curl -sL https://raw.githubusercontent.com/cjap111/vps-monitor-panel/main/install.sh | bash -s -- 2`;
                 document.getElementById('installCommand').textContent = command;
                 addModal.style.display = 'flex';
@@ -354,6 +386,15 @@
                 document.getElementById('settingTotalNetDown').value = (server.totalNet.down / GB_IN_BYTES).toFixed(2);
                 document.getElementById('settingResetDay').value = server.resetDay;
                 document.getElementById('settingsPassword').value = ''; // 清空密码字段
+
+                // 设置到期日期输入框的值
+                if (server.expirationDate) {
+                    // 将 ISO 格式日期（如 "YYYY-MM-DD"）直接赋值给 date input
+                    document.getElementById('settingExpirationDate').value = server.expirationDate.split('T')[0];
+                } else {
+                    document.getElementById('settingExpirationDate').value = ''; // 如果未设置，则清空
+                }
+
                 settingsModal.style.display = 'flex';
             }
 
@@ -375,11 +416,17 @@
                     return;
                 }
 
+                // 获取到期日期，如果为空则设为 null
+                const expirationDateInput = document.getElementById('settingExpirationDate').value;
+                const expirationDate = expirationDateInput ? new Date(expirationDateInput).toISOString().split('T')[0] : null;
+
+
                 const settings = {
                     totalNetUp: parseFloat(document.getElementById('settingTotalNetUp').value) * GB_IN_BYTES,
                     totalNetDown: parseFloat(document.getElementById('settingTotalNetDown').value) * GB_IN_BYTES,
                     resetDay: parseInt(document.getElementById('settingResetDay').value),
-                    password: settingsPassword // 将密码添加到请求体中
+                    password: settingsPassword, // 将密码添加到请求体中
+                    expirationDate: expirationDate // 添加到期日期
                 };
 
                 try {
