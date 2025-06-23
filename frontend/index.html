@@ -329,36 +329,44 @@
                 cardElement.querySelector('[data-id="total-net-down"]').textContent = `${totalNetDownGB} GB`;
                 cardElement.querySelector('[data-id="reset-info"]').textContent = `每月${server.resetDay}日重置`;
 
-                // Update Expiration Date
+                // Update Expiration Date and calculate remaining days
                 const expirationInfo = cardElement.querySelector('[data-id="expiration-info"]');
                 if (server.expirationDate) {
                     const expDate = new Date(server.expirationDate);
-                    // Format date as YYYY-MM-DD
-                    const formattedDate = expDate.toISOString().split('T')[0];
-                    expirationInfo.textContent = `到期日期: ${formattedDate}`;
-                    
-                    // Add styling for expiring soon
                     const now = new Date();
+                    now.setHours(0, 0, 0, 0); // Normalize 'now' to start of day
+                    expDate.setHours(0, 0, 0, 0); // Normalize 'expDate' to start of day
+
                     const diffTime = expDate.getTime() - now.getTime();
                     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                    if (diffDays <= 7 && diffDays > 0) {
-                        expirationInfo.classList.remove('text-red-400');
-                        expirationInfo.classList.add('text-orange-400'); // Orange for expiring soon
-                    } else if (diffDays <= 0) {
-                        expirationInfo.classList.remove('text-orange-400');
+
+                    if (diffDays > 0) {
+                        expirationInfo.textContent = `剩余 ${diffDays} 天`;
+                        if (diffDays <= 7) {
+                            expirationInfo.classList.remove('text-green-400');
+                            expirationInfo.classList.add('text-orange-400'); // Orange for expiring soon
+                        } else {
+                            expirationInfo.classList.remove('text-orange-400', 'text-red-400');
+                            expirationInfo.classList.add('text-green-400'); // Green for normal
+                        }
+                    } else if (diffDays === 0) {
+                        expirationInfo.textContent = `今天到期`;
+                        expirationInfo.classList.remove('text-green-400');
+                        expirationInfo.classList.add('text-orange-400');
+                    } else {
+                        expirationInfo.textContent = `已过期 ${Math.abs(diffDays)} 天`;
+                        expirationInfo.classList.remove('text-orange-400', 'text-green-400');
                         expirationInfo.classList.add('text-red-400'); // Red for expired
+                        // Optionally set status to offline if expired
                         statusDot.classList.remove('status-online');
                         statusDot.classList.add('status-offline');
                         statusText.textContent = '已过期';
                         statusText.classList.remove('text-green-400');
                         statusText.classList.add('text-red-400');
-                    } else {
-                        expirationInfo.classList.remove('text-orange-400', 'text-red-400');
-                        expirationInfo.classList.add('text-gray-400'); // Default color
                     }
                 } else {
                     expirationInfo.textContent = '到期日期: 未设置';
-                    expirationInfo.classList.remove('text-orange-400', 'text-red-400');
+                    expirationInfo.classList.remove('text-orange-400', 'text-red-400', 'text-green-400');
                     expirationInfo.classList.add('text-gray-400');
                 }
             }
@@ -463,7 +471,7 @@
                 // Set value for expiration date input
                 if (server.expirationDate) {
                     // Assign ISO format date (e.g., "YYYY-MM-DD") directly to date input
-                    document.getElementById('settingExpirationDate').value = server.expirationDate.split('T')[0];
+                    document.getElementById('settingExpirationDate').value = server.expirationDate; // Assuming it's already YYYY-MM-DD from backend
                 } else {
                     document.getElementById('settingExpirationDate').value = ''; // Clear if not set
                 }
@@ -491,7 +499,8 @@
 
                 // Get expiration date, set to null if empty
                 const expirationDateInput = document.getElementById('settingExpirationDate').value;
-                const expirationDate = expirationDateInput ? new Date(expirationDateInput).toISOString().split('T')[0] : null;
+                // Ensure date is in 'YYYY-MM-DD' format if not null
+                const expirationDate = expirationDateInput ? expirationDateInput : null;
 
 
                 const settings = {
