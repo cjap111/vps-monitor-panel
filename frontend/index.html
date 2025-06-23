@@ -827,8 +827,8 @@
                 const detailTotalNetDownElement = document.getElementById('detailTotalNetDown');
                 const detailResetInfoElement = document.getElementById('detailResetInfo');
 
-                if (detailTotalNetUpElement) detailTotalNetUpElement.textContent = `${totalNetUpGB} GB`;
-                if (detailTotalNetDownElement) detailTotalNetDownElement.textContent = `${totalNetDownGB} GB`;
+                if (detailTotalNetUpElement) detailTotalNetUpElement.textContent = `${detailTotalNetUpGB} GB`;
+                if (detailTotalNetDownElement) detailTotalNetDownElement.textContent = `${detailTotalNetDownGB} GB`;
                 if (detailResetInfoElement) detailResetInfoElement.textContent = `每月${server.resetDay}日重置`;
 
                 const detailUptimeElement = document.getElementById('detailUptime');
