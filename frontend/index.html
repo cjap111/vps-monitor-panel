@@ -724,18 +724,20 @@
                 document.getElementById('detailServerName').textContent = server.name;
                 document.getElementById('detailServerLocation').textContent = server.location;
                 document.getElementById('detailServerOS').textContent = server.os;
-                // Add CPU Model
-                // Ensure the element exists before setting textContent or classList
+                
+                // Add CPU Model - Check if element exists before accessing
                 const detailCpuModelElement = document.getElementById('detailCpuModel');
                 if (detailCpuModelElement) {
                     detailCpuModelElement.textContent = `CPU 型号: ${server.cpuModel || 'N/A'}`;
                 }
-                // Add Memory Model
+
+                // Add Memory Model - Check if element exists before accessing
                 const detailMemModelElement = document.getElementById('detailMemModel');
                 if (detailMemModelElement) {
                     detailMemModelElement.textContent = `内存型号: ${server.memModel || 'N/A'}`;
                 }
-                // Add Disk Model
+
+                // Add Disk Model - Check if element exists before accessing
                 const detailDiskModelElement = document.getElementById('detailDiskModel');
                 if (detailDiskModelElement) {
                     detailDiskModelElement.textContent = `硬盘型号: ${server.diskModel || 'N/A'}`;
@@ -748,7 +750,7 @@
 
                 const detailMemUsed = server.mem ? server.mem.used : 0;
                 const detailMemTotal = server.mem ? server.mem.total : 0;
-                const detailMemUsagePercent = detailMemTotal > 0 ? (detailMemUsed / detailMemTotal * 100).toFixed(1) : 0;
+                const detailMemUsagePercent = memTotal > 0 ? (detailMemUsed / detailMemTotal * 100).toFixed(1) : 0;
                 document.getElementById('detailMemUsage').textContent = `${detailMemUsed} MB / ${detailMemTotal} MB`;
                 document.getElementById('detailMemBar').style.width = `${detailMemUsagePercent}%`;
 
@@ -757,7 +759,7 @@
                 const detailDiskUsedGB = (detailDiskUsedMB / 1024).toFixed(2);
                 const detailDiskTotalGB = (detailDiskTotalMB / 1024).toFixed(2);
                 const detailDiskUsagePercent = detailDiskTotalMB > 0 ? (detailDiskUsedMB / detailDiskTotalMB * 100).toFixed(1) : 0;
-                document.getElementById('detailDiskUsage').textContent = `${detailDiskUsedGB} GB / ${detailDiskTotalGB} GB`;
+                document.getElementById('detailDiskUsage').textContent = `${diskUsedGB} GB / ${diskTotalGB} GB`;
                 document.getElementById('detailDiskBar').style.width = `${diskUsagePercent}%`;
 
                 const detailTotalNetUpGB = (server.totalNet.up / GB_IN_BYTES).toFixed(2);
