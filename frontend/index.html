@@ -52,7 +52,22 @@
                 <span>添加服务器</span>
             </button>
         </header>
-        <main id="server-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"></main>
+        <main id="server-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <!-- Loading Indicator -->
+            <div id="loading-indicator" class="col-span-full text-center text-gray-400 p-8">
+                <svg class="animate-spin h-8 w-8 text-indigo-500 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p>正在加载服务器数据...</p>
+            </div>
+            <!-- Error Display -->
+            <div id="error-display" class="col-span-full text-center text-red-500 p-8 hidden">
+                <p class="font-bold mb-2">加载数据失败！</p>
+                <p class="text-sm">请检查后端服务是否正常运行，以及网络连接和防火墙设置。</p>
+                <p id="error-message-content" class="text-xs mt-2 text-red-400"></p>
+            </div>
+        </main>
     </div>
 
     <!-- Server Card Template -->
@@ -249,110 +264,53 @@
             }
 
             async function fetchAndRenderServers() {
+                const loadingIndicator = document.getElementById('loading-indicator');
+                const errorDisplay = document.getElementById('error-display');
+                const errorMessageContent = document.getElementById('error-message-content');
+
+                // Show loading indicator, hide error
+                loadingIndicator.classList.remove('hidden');
+                errorDisplay.classList.add('hidden');
+                errorMessageContent.textContent = ''; // Clear previous error
+
                 try {
                     const response = await fetch(`${API_ENDPOINT}/servers`);
                     if (!response.ok) {
-                        console.error("Failed to fetch server data");
-                        return;
+                        const errorText = await response.text();
+                        throw new Error(`HTTP Error: ${response.status} - ${errorText || response.statusText}`);
                     }
                     const serverList = await response.json();
                     servers = serverList;
                     renderAllServers();
                 } catch (error) {
-                    console.error("Error fetching server list:", error);
+                    console.error("获取服务器列表时出错:", error);
+                    errorDisplay.classList.remove('hidden');
+                    errorMessageContent.textContent = error.message;
+                    serverGrid.innerHTML = ''; // Clear servers if error
+                } finally {
+                    loadingIndicator.classList.add('hidden'); // Always hide loading indicator
                 }
             }
 
             function renderAllServers() {
-                // Clear existing cards
-                serverGrid.innerHTML = '';
-                // Sort: online first, then offline
-                servers.sort((a, b) => (b.online ? 1 : 0) - (a.online ? 1 : 0));
-                servers.forEach(server => {
-                    const card = template.content.cloneNode(true).querySelector('.card');
-                    card.dataset.serverId = server.id;
-                    updateServerCard(card, server);
-                    serverGrid.appendChild(card);
-                });
+                serverGrid.innerHTML = ''; // Clear existing cards
+
+                if (servers.length === 0) {
+                    const noServersMessage = document.createElement('div');
+                    noServersMessage.className = 'col-span-full text-center text-gray-400 p-8';
+                    noServersMessage.innerHTML = '<p>暂无服务器数据。请添加服务器并确保Agent已成功安装。</p>';
+                    serverGrid.appendChild(noServersMessage);
+                } else {
+                    // Sort: online first, then offline
+                    servers.sort((a, b) => (b.online ? 1 : 0) - (a.online ? 1 : 0));
+                    servers.forEach(server => {
+                        const card = template.content.cloneNode(true).querySelector('.card');
+                        card.dataset.serverId = server.id;
+                        updateServerCard(card, server);
+                        serverGrid.appendChild(card);
+                    });
+                }
                 lucide.createIcons();
-            }
-
-            function updateServerCard(card, serverData) {
-                const query = (selector) => card.querySelector(`[data-id="${selector}"]`);
-
-                query("name").textContent = serverData.name;
-                query("location").textContent = serverData.location || "N/A";
-                query("os").textContent = serverData.os || "Unknown OS";
-
-                const statusDot = query("status-dot");
-                const statusText = query("status-text");
-                if (serverData.online) {
-                    statusDot.className = "status-dot status-online";
-                    statusText.textContent = "在线";
-                    statusText.className = "font-medium text-sm text-green-400";
-                } else {
-                    statusDot.className = "status-dot status-offline";
-                    statusText.textContent = "离线";
-                    statusText.className = "font-medium text-sm text-red-500";
-                }
-                
-                // Resources
-                const cpuUsage = serverData.cpu.toFixed(1);
-                query("cpu-usage").textContent = `${cpuUsage}%`;
-                query("cpu-bar").style.width = `${cpuUsage}%`;
-
-                const memUsedGB = serverData.mem.used / 1024;
-                const memTotalGB = serverData.mem.total / 1024;
-                const memPercent = (serverData.mem.used / serverData.mem.total * 100).toFixed(1);
-                query("mem-usage").textContent = `${memUsedGB.toFixed(2)} GB / ${memTotalGB.toFixed(2)} GB`;
-                query("mem-bar").style.width = `${memPercent}%`;
-                
-                const diskUsedGB = serverData.disk.used / 1024;
-                const diskTotalGB = serverData.disk.total / 1024;
-                const diskPercent = (serverData.disk.used / serverData.disk.total * 100).toFixed(1);
-                query("disk-usage").textContent = `${diskUsedGB.toFixed(2)} GB / ${diskTotalGB.toFixed(2)} GB`;
-                query("disk-bar").style.width = `${diskPercent}%`;
-                
-                // Network
-                query("net-down").textContent = formatSpeed(serverData.net.down);
-                query("net-up").textContent = formatSpeed(serverData.net.up);
-                
-                const uptimeDays = ((Date.now() - serverData.startTime) / (1000 * 60 * 60 * 24)).toFixed(0);
-                query("uptime").textContent = `在线 ${uptimeDays} 天`;
-
-                // Total Traffic
-                query("total-net-up").textContent = (serverData.totalNet.up / GB_IN_BYTES).toFixed(2) + ' GB';
-                query("total-net-down").textContent = (serverData.totalNet.down / GB_IN_BYTES).toFixed(2) + ' GB';
-                query("reset-info").textContent = `每月${serverData.resetDay}日重置`;
-
-                // Expiration Date Logic
-                const expirationInfo = query("expiration-info");
-                if (serverData.expirationDate) {
-                    const expirationDate = new Date(serverData.expirationDate);
-                    const today = new Date();
-                    today.setHours(0, 0, 0, 0); // Set time to midnight for accurate day calculation
-
-                    const diffTime = expirationDate.getTime() - today.getTime();
-                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); // Round up, even if only a few hours left, count as a day
-
-                    if (diffDays > 0) {
-                        expirationInfo.textContent = `剩余 ${diffDays} 天`;
-                        expirationInfo.closest('.flex').classList.remove('text-red-500'); // Remove expired warning color
-                        expirationInfo.closest('.flex').classList.add('text-orange-300'); // Set normal color
-                    } else if (diffDays === 0) {
-                        expirationInfo.textContent = `今天到期`;
-                        expirationInfo.closest('.flex').classList.remove('text-orange-300');
-                        expirationInfo.closest('.flex').classList.add('text-yellow-400'); // Warning color
-                    } else {
-                        expirationInfo.textContent = `已过期 ${Math.abs(diffDays)} 天`;
-                        expirationInfo.closest('.flex').classList.remove('text-orange-300');
-                        expirationInfo.closest('.flex').classList.add('text-red-500'); // Danger color
-                    }
-                } else {
-                    expirationInfo.textContent = "未设置到期日期";
-                    expirationInfo.closest('.flex').classList.remove('text-red-500', 'text-yellow-400');
-                    expirationInfo.closest('.flex').classList.add('text-gray-500');
-                }
             }
             
             const addModal = document.getElementById('addServerModal');
