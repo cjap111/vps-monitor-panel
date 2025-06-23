@@ -793,19 +793,21 @@
                 if (detailCpuUsageElement) detailCpuUsageElement.textContent = `${cpuUsage}%`;
                 if (detailCpuBarElement) detailCpuBarElement.style.width = `${cpuUsage}%`;
 
-                const detailMemUsed = server.mem ? server.mem.used : 0;
-                const detailMemTotal = server.mem ? server.mem.total : 0;
-                const detailMemUsagePercent = memTotal > 0 ? (memUsed / memTotal * 100).toFixed(1) : 0;
+                // Safely access server.mem properties
+                const memUsed = (server.mem && typeof server.mem.used === 'number') ? server.mem.used : 0;
+                const memTotal = (server.mem && typeof server.mem.total === 'number') ? server.mem.total : 0;
+                const memUsagePercent = memTotal > 0 ? (memUsed / memTotal * 100).toFixed(1) : 0;
                 const detailMemUsageElement = document.getElementById('detailMemUsage');
                 const detailMemBarElement = document.getElementById('detailMemBar');
-                if (memUsageElement) memUsageElement.textContent = `${memUsed} MB / ${memTotal} MB`;
-                if (memBarElement) memBarElement.style.width = `${memUsagePercent}%`;
+                if (detailMemUsageElement) detailMemUsageElement.textContent = `${memUsed} MB / ${memTotal} MB`;
+                if (memBarElement) detailMemBarElement.style.width = `${memUsagePercent}%`;
 
-                const detailDiskUsedMB = server.disk ? server.disk.used : 0;
-                const detailDiskTotalMB = server.disk ? server.disk.total : 0;
-                const detailDiskUsedGB = (detailDiskUsedMB / 1024).toFixed(2);
-                const detailDiskTotalGB = (detailDiskTotalMB / 1024).toFixed(2);
-                const detailDiskUsagePercent = detailDiskTotalMB > 0 ? (detailDiskUsedMB / detailDiskTotalMB * 100).toFixed(1) : 0;
+                // Safely access server.disk properties
+                const diskUsedMB = (server.disk && typeof server.disk.used === 'number') ? server.disk.used : 0;
+                const diskTotalMB = (server.disk && typeof server.disk.total === 'number') ? server.disk.total : 0;
+                const detailDiskUsedGB = (diskUsedMB / 1024).toFixed(2);
+                const detailDiskTotalGB = (diskTotalMB / 1024).toFixed(2);
+                const detailDiskUsagePercent = diskTotalMB > 0 ? (diskUsedMB / diskTotalMB * 100).toFixed(1) : 0;
                 const detailDiskUsageElement = document.getElementById('detailDiskUsage');
                 const detailDiskBarElement = document.getElementById('detailDiskBar');
                 if (detailDiskUsageElement) detailDiskUsageElement.textContent = `${diskUsedGB} GB / ${diskTotalGB} GB`;
