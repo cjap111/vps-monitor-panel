@@ -671,8 +671,12 @@
                 if (!server) return;
                 
                 if (document.getElementById('settingServerId')) document.getElementById('settingServerId').value = server.id;
-                if (document.getElementById('settingTotalNetUp')) document.getElementById('settingTotalNetUp').value = (server.totalNet.up / GB_IN_BYTES).toFixed(2);
-                if (document.getElementById('settingTotalNetDown')) document.getElementById('settingTotalNetDown').value = (server.totalNet.down / GB_IN_BYTES).toFixed(2);
+                // Ensure totalNet exists and has properties before accessing
+                const currentTotalNetUp = (server.totalNet && typeof server.totalNet.up === 'number') ? (server.totalNet.up / GB_IN_BYTES).toFixed(2) : '0.00';
+                const currentTotalNetDown = (server.totalNet && typeof server.totalNet.down === 'number') ? (server.totalNet.down / GB_IN_BYTES).toFixed(2) : '0.00';
+
+                if (document.getElementById('settingTotalNetUp')) document.getElementById('settingTotalNetUp').value = currentTotalNetUp;
+                if (document.getElementById('settingTotalNetDown')) document.getElementById('settingTotalNetDown').value = currentTotalNetDown;
                 if (document.getElementById('settingResetDay')) document.getElementById('settingResetDay').value = server.resetDay;
                 if (document.getElementById('settingsPassword')) document.getElementById('settingsPassword').value = '';
 
@@ -787,7 +791,7 @@
                 }
 
 
-                const detailCpuUsage = server.cpu ? server.cpu.toFixed(1) : 0;
+                const detailCpuUsage = (server.cpu !== undefined && server.cpu !== null) ? server.cpu.toFixed(1) : 0;
                 const detailCpuUsageElement = document.getElementById('detailCpuUsage');
                 const detailCpuBarElement = document.getElementById('detailCpuBar');
                 if (detailCpuUsageElement) detailCpuUsageElement.textContent = `${cpuUsage}%`;
@@ -800,7 +804,7 @@
                 const detailMemUsageElement = document.getElementById('detailMemUsage');
                 const detailMemBarElement = document.getElementById('detailMemBar');
                 if (detailMemUsageElement) detailMemUsageElement.textContent = `${memUsed} MB / ${memTotal} MB`;
-                if (memBarElement) detailMemBarElement.style.width = `${memUsagePercent}%`;
+                if (memBarElement) memBarElement.style.width = `${memUsagePercent}%`;
 
                 // Safely access server.disk properties
                 const diskUsedMB = (server.disk && typeof server.disk.used === 'number') ? server.disk.used : 0;
