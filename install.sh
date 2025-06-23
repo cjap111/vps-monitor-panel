@@ -8,7 +8,7 @@
 
 # --- 颜色定义 ---
 RED='\033[0;31m'
-GREEN='\033[0;32m'\
+GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
@@ -45,8 +45,10 @@ install_server() {
     local DOMAIN_FILE="/opt/monitor-backend/.env"
     local OLD_DOMAIN=""
     
-    if [ -f "$DOMAIN_FILE" ]; then
-        OLD_DOMAIN=$(grep "DOMAIN=" /etc/nginx/sites-available/* | head -n 1 | awk -F' ' '{print $2}' | sed 's/;//')
+    # Attempt to read existing domain from Nginx config, if available
+    # This assumes the Nginx config file name contains the domain
+    if [ -d "/etc/nginx/sites-available/" ]; then
+        OLD_DOMAIN=$(grep -r "server_name" /etc/nginx/sites-available/ | grep -v "#" | head -n 1 | awk '{print $2}' | sed 's/;//')
     fi
 
     if [ -n "$OLD_DOMAIN" ]; then
@@ -112,11 +114,12 @@ EOF
 
     # 4. 获取SSL证书 (如果证书不存在或需要续订)
     echo "--> 正在为 $DOMAIN 获取或续订SSL证书..."
-    if ! sudo certbot certificates -d "$DOMAIN" | grep -q "VALID"; then
+    # Check if a valid certificate already exists for the domain
+    if sudo certbot certificates -d "$DOMAIN" | grep -q "VALID"; then
+        echo -e "${GREEN}检测到现有有效的SSL证书，跳过新证书申请。Certbot会自动处理续订。${NC}"
+    else
         read -p "请输入您的邮箱地址 (用于Let's Encrypt证书续订提醒): " EMAIL
         sudo certbot --nginx --agree-tos --redirect --non-interactive -m "$EMAIL" -d "$DOMAIN"
-    else
-        echo "SSL证书已存在且有效，跳过获取。"
     fi
 
 
