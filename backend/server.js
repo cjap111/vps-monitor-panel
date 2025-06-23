@@ -67,10 +67,10 @@ app.get('/', (req, res) => {
 // POST /api/report - Receive monitoring data from agents
 app.post('/api/report', (req, res) => {
     const data = req.body;
-    console.log(`[${new Date().toISOString()}] Received report from server ID: ${data.id}`); // Added log for incoming reports
+    console.log(`[${new Date().toISOString()}] Received report from server ID: ${data.id}`);
     
     if (!data.id) {
-        console.error(`[${new Date().toISOString()}] Error: Server ID is required for report.`); // Added error log
+        console.error(`[${new Date().toISOString()}] Error: Server ID is required for report.`);
         return res.status(400).send('Server ID is required.');
     }
 
@@ -175,12 +175,12 @@ app.post('/api/report', (req, res) => {
 
 // GET /api/servers - Get all server data for the frontend
 app.get('/api/servers', (req, res) => {
-    console.log(`[${new Date().toISOString()}] Request received for server list.`); // Added log for server list requests
+    console.log(`[${new Date().toISOString()}] Request received for server list.`);
     const now = Date.now();
-    // Check online status for all servers
+    // Check online status for all servers - adjusted to 5 seconds threshold for 1-second reporting
     Object.values(serverDataStore).forEach(server => {
-        // If no update for more than 30 seconds, consider offline
-        server.online = (now - server.lastUpdated) < 30000; 
+        // If no update for more than 5 seconds, consider offline
+        server.online = (now - server.lastUpdated) < 5000; 
     });
     res.json(Object.values(serverDataStore));
 });
@@ -190,11 +190,11 @@ app.post('/api/servers/:id/settings', (req, res) => {
     const { id } = req.params;
     const { totalNetUp, totalNetDown, resetDay, password, expirationDate } = req.body; 
     
-    console.log(`[${new Date().toISOString()}] Received settings update for server ID: ${id}`); // Added log for settings updates
+    console.log(`[${new Date().toISOString()}] Received settings update for server ID: ${id}`);
 
     // Validate agent installation password
     if (!password || password !== AGENT_INSTALL_PASSWORD) {
-        console.error(`[${new Date().toISOString()}] Invalid agent installation password for server ${id} settings.`); // Added error log
+        console.error(`[${new Date().toISOString()}] Invalid agent installation password for server ${id} settings.`);
         return res.status(403).send('Incorrect agent installation password.');
     }
 
@@ -205,10 +205,10 @@ app.post('/api/servers/:id/settings', (req, res) => {
         serverDataStore[id].expirationDate = expirationDate; // Save expiration date
         // Note: cpuModel, memModel, diskModel, rawTotalNet are not updated via settings route, they are only updated by agent reports.
         saveData(); // Save data
-        console.log(`[${new Date().toISOString()}] Server ${id} settings updated successfully.`); // Log success
+        console.log(`[${new Date().toISOString()}] Server ${id} settings updated successfully.`);
         res.status(200).send('Settings updated successfully.');
     } else {
-        console.error(`[${new Date().toISOString()}] Server ${id} not found for settings update.`); // Added error log
+        console.error(`[${new Date().toISOString()}] Server ${id} not found for settings update.`);
         res.status(404).send('Server not found.');
     }
 });
@@ -218,24 +218,24 @@ app.delete('/api/servers/:id', (req, res) => {
     const { id } = req.params;
     const { password } = req.body;
 
-    console.log(`[${new Date().toISOString()}] Received delete request for server ID: ${id}`); // Added log for delete requests
+    console.log(`[${new Date().toISOString()}] Received delete request for server ID: ${id}`);
 
     if (!password) {
-        console.error(`[${new Date().toISOString()}] Password required for deleting server ${id}.`); // Added error log
+        console.error(`[${new Date().toISOString()}] Password required for deleting server ${id}.`);
         return res.status(400).send('Password required.');
     }
     if (password !== DELETE_PASSWORD) {
-        console.error(`[${new Date().toISOString()}] Incorrect password for deleting server ${id}.`); // Added error log
+        console.error(`[${new Date().toISOString()}] Incorrect password for deleting server ${id}.`);
         return res.status(403).send('Incorrect password.');
     }
 
     if (serverDataStore[id]) {
         delete serverDataStore[id];
         saveData(); // Save data
-        console.log(`[${new Date().toISOString()}] Server ${id} deleted.`); // Log success
+        console.log(`[${new Date().toISOString()}] Server ${id} deleted.`);
         res.status(200).send('Server deleted successfully.');
     } else {
-        console.error(`[${new Date().toISOString()}] Server ${id} not found for deletion.`); // Added error log
+        console.error(`[${new Date().toISOString()}] Server ${id} not found for deletion.`);
         res.status(404).send('Server not found.');
     }
 });
@@ -243,13 +243,13 @@ app.delete('/api/servers/:id', (req, res) => {
 // POST /api/verify-agent-password - Verify the agent installation password
 app.post('/api/verify-agent-password', (req, res) => {
     const { password } = req.body;
-    console.log(`[${new Date().toISOString()}] Received agent password verification request.`); // Added log
+    console.log(`[${new Date().toISOString()}] Received agent password verification request.`);
     if (password && password === AGENT_INSTALL_PASSWORD) {
         res.status(200).send('Agent installation password correct.');
-        console.log(`[${new Date().toISOString()}] Agent installation password verified successfully.`); // Log success
+        console.log(`[${new Date().toISOString()}] Agent installation password verified successfully.`);
     } else {
         res.status(403).send('Invalid agent installation password.');
-        console.warn(`[${new Date().toISOString()}] Invalid agent installation password provided.`); // Log warning
+        console.warn(`[${new Date().toISOString()}] Invalid agent installation password provided.`);
     }
 });
 
