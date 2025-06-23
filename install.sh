@@ -506,8 +506,8 @@ uninstall_agent() {
 echo "请选择要执行的操作: (再次运行本脚本即可安装或更新)"
 echo "1) 安装/更新服务端 (Frontend + Backend)"
 echo "2) 安装/更新被控端 (Agent)"
-echo -e "${YELLOW}3) 卸载服务端${NC}"
-echo -e "${YELLOW}4) 卸载被控端${NC}"
+echo "3) 卸载服务端"
+echo "4) 卸载被控端"
 read -p "请输入选项 [1-4]: " choice
 
 case $choice in
