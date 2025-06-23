@@ -805,7 +805,8 @@
                 const detailMemUsageElement = document.getElementById('detailMemUsage');
                 const detailMemBarElement = document.getElementById('detailMemBar');
                 if (detailMemUsageElement) detailMemUsageElement.textContent = `${memUsed} MB / ${memTotal} MB`;
-                if (memBarElement) memBarElement.style.width = `${memUsagePercent}%`;
+                // Corrected: Used detailMemBarElement instead of memBarElement
+                if (detailMemBarElement) detailMemBarElement.style.width = `${memUsagePercent}%`;
 
                 // Safely access server.disk properties
                 const diskUsedMB = (server.disk && typeof server.disk.used === 'number') ? server.disk.used : 0;
@@ -815,7 +816,8 @@
                 const detailDiskUsagePercent = diskTotalMB > 0 ? (diskUsedMB / diskTotalMB * 100).toFixed(1) : 0;
                 const detailDiskUsageElement = document.getElementById('detailDiskUsage');
                 const detailDiskBarElement = document.getElementById('detailDiskBar');
-                if (detailDiskUsageElement) detailDiskUsageElement.textContent = `${diskUsedGB} GB / ${detailDiskTotalGB} GB`;
+                if (detailDiskUsageElement) detailDiskUsageElement.textContent = `${diskUsedGB} GB / ${diskTotalGB} GB`;
+                // Corrected: Used detailDiskBarElement and diskUsagePercent
                 if (detailDiskBarElement) detailDiskBarElement.style.width = `${detailDiskUsagePercent}%`;
 
 
@@ -862,16 +864,16 @@
                         } else if (diffDays === 0) {
                             detailExpirationInfo.textContent = `到期日期: 今天到期`;
                             detailExpirationInfo.classList.remove('text-green-400', 'text-red-400');
-                            expirationInfo.classList.add('text-orange-400');
+                            detailExpirationInfo.classList.add('text-orange-400');
                         } else {
                             detailExpirationInfo.textContent = `到期日期: 已过期 ${Math.abs(diffDays)} 天`;
                             detailExpirationInfo.classList.remove('text-orange-400', 'text-green-400');
-                            expirationInfo.classList.add('text-red-400');
+                            detailExpirationInfo.classList.add('text-red-400');
                         }
                     } else {
                         detailExpirationInfo.textContent = '到期日期: 未设置';
                         detailExpirationInfo.classList.remove('text-orange-400', 'text-red-400', 'text-green-400');
-                        expirationInfo.classList.add('text-gray-400');
+                        detailExpirationInfo.classList.add('text-gray-400');
                     }
                 }
             }
