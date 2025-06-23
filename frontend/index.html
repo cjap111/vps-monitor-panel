@@ -561,8 +561,8 @@
                             uploadChartInstance = null;
                         }
                         // Reset network history
-                        networkHistory.labels = Array.from({length: chartDataPoints}, (_, i) => i % 10 === 0 ? `-${chartDataPoints - i}s` : '');
-                        networkHistory.download = Array(chartDataPoints).fill(0);
+                        networkHistory.labels = Array.from({length: chartDataPoints}, (_, i) => i % 10 === 0 ? `-${chartDataPoints - i}s` : ''),
+                        networkHistory.download = Array(chartDataPoints).fill(0),
                         networkHistory.upload = Array(chartDataPoints).fill(0);
                     }
                 }
