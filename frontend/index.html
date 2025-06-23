@@ -151,7 +151,7 @@
                 </div>
                 <div class="flex justify-between items-center pl-1">
                     <span class="flex items-center space-x-1.5 text-red-400"><i data-lucide="arrow-up" class="w-3 h-3"></i><span data-id="total-net-up" class="font-mono">0 GB</span></span>
-                    <span class="flex items-center space-x-1.5 text-cyan-400"><i data-lucide="arrow-down" class="w-3 h-3"></i><span class="font-mono">0 GB</span></span>
+                    <span class="flex items-center space-x-1.5 text-cyan-400"><i data-lucide="arrow-down" class="w-3 h-3"></i><span data-id="total-net-down" class="font-mono">0 GB</span></span>
                 </div>
                  <!-- 新增的到期日期显示 -->
                 <div class="flex justify-between items-center pl-1 pt-1">
@@ -725,11 +725,21 @@
                 document.getElementById('detailServerLocation').textContent = server.location;
                 document.getElementById('detailServerOS').textContent = server.os;
                 // Add CPU Model
-                document.getElementById('detailCpuModel').textContent = `CPU 型号: ${server.cpuModel || 'N/A'}`;
+                // Ensure the element exists before setting textContent or classList
+                const detailCpuModelElement = document.getElementById('detailCpuModel');
+                if (detailCpuModelElement) {
+                    detailCpuModelElement.textContent = `CPU 型号: ${server.cpuModel || 'N/A'}`;
+                }
                 // Add Memory Model
-                document.getElementById('detailMemModel').textContent = `内存型号: ${server.memModel || 'N/A'}`;
+                const detailMemModelElement = document.getElementById('detailMemModel');
+                if (detailMemModelElement) {
+                    detailMemModelElement.textContent = `内存型号: ${server.memModel || 'N/A'}`;
+                }
                 // Add Disk Model
-                document.getElementById('detailDiskModel').textContent = `硬盘型号: ${server.diskModel || 'N/A'}`;
+                const detailDiskModelElement = document.getElementById('detailDiskModel');
+                if (detailDiskModelElement) {
+                    detailDiskModelElement.textContent = `硬盘型号: ${server.diskModel || 'N/A'}`;
+                }
 
 
                 const detailCpuUsage = server.cpu ? server.cpu.toFixed(1) : 0;
@@ -748,7 +758,7 @@
                 const detailDiskTotalGB = (detailDiskTotalMB / 1024).toFixed(2);
                 const detailDiskUsagePercent = detailDiskTotalMB > 0 ? (detailDiskUsedMB / detailDiskTotalMB * 100).toFixed(1) : 0;
                 document.getElementById('detailDiskUsage').textContent = `${detailDiskUsedGB} GB / ${detailDiskTotalGB} GB`;
-                document.getElementById('detailDiskBar').style.width = `${detailDiskUsagePercent}%`;
+                document.getElementById('detailDiskBar').style.width = `${diskUsagePercent}%`;
 
                 const detailTotalNetUpGB = (server.totalNet.up / GB_IN_BYTES).toFixed(2);
                 const detailTotalNetDownGB = (server.totalNet.down / GB_IN_BYTES).toFixed(2);
@@ -776,16 +786,16 @@
                     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
                     if (diffDays > 0) {
-                        detailExpirationInfo.textContent = `到期日期: 剩余 ${diffDays} 天`;
+                        expirationInfo.textContent = `到期日期: 剩余 ${diffDays} 天`;
                         if (diffDays <= 7) {
-                            detailExpirationInfo.classList.remove('text-green-400');
-                            detailExpirationInfo.classList.add('text-orange-400');
+                            expirationInfo.classList.remove('text-green-400');
+                            expirationInfo.classList.add('text-orange-400');
                         } else {
-                            detailExpirationInfo.classList.remove('text-orange-400', 'text-red-400');
-                            detailExpirationInfo.classList.add('text-green-400');
+                            expirationInfo.classList.remove('text-orange-400', 'text-red-400');
+                            expirationInfo.classList.add('text-green-400');
                         }
                     } else if (diffDays === 0) {
-                        detailExpirationInfo.textContent = `到期日期: 今天到期`;
+                        expirationInfo.textContent = `到期日期: 今天到期`;
                         expirationInfo.classList.remove('text-green-400');
                         expirationInfo.classList.add('text-orange-400');
                     } else {
