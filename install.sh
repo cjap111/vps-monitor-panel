@@ -2,14 +2,14 @@
 
 # =================================================================
 #
-#          一键式服务器监控面板安装/卸载/更新脚本 v1.6 (定制版)
+#          一键式服务器监控面板安装/卸载/更新脚本 v1.7 (定制版)
 #
 # =================================================================
 
 # --- 颜色定义 ---
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
+YELLOW='\033[1;33m'\
 NC='\033[0m' # No Color
 
 # --- 脚本欢迎信息 ---
@@ -22,7 +22,7 @@ echo ""
 install_server() {
     echo -e "${YELLOW}开始安装或更新服务端 (前端 + 后端)...${NC}"
     
-    # 1. 更新并安装依赖 (已移除静默模式以显示详细日志)
+    # 1. 更新并安装依赖
     echo "--> 正在更新软件包列表..."
     sudo apt-get update
     if [ $? -ne 0 ]; then
@@ -31,7 +31,6 @@ install_server() {
     fi
 
     echo "--> 正在检查并安装/更新依赖 (Nginx, Node.js, Certbot)..."
-    # 检查是否已安装，如果未安装则安装
     dpkg -s nginx >/dev/null 2>&1 || sudo apt-get install -y nginx
     dpkg -s nodejs >/dev/null 2>&1 || sudo apt-get install -y nodejs npm
     dpkg -s certbot >/dev/null 2>&1 || sudo apt-get install -y certbot python3-certbot-nginx
@@ -43,67 +42,75 @@ install_server() {
 
     # 2. 获取用户输入 (如果是更新，尝试读取旧配置，否则提示输入)
     local BACKEND_ENV_FILE="/opt/monitor-backend/.env"
-    local OLD_DOMAIN_FROM_ENV="" # 从 .env 文件读取的旧域名
-    
-    # 尝试从后端服务的 .env 文件中读取旧域名 (最可靠的持久化配置)
+    local OLD_DOMAIN_FROM_ENV="" 
+    local CURRENT_DEL_PASSWORD=""
+    local CURRENT_AGENT_PASSWORD=""
+    local OLD_EMAIL=""
+    local ENV_FILE_EXISTS=false
+
+    # 尝试从后端服务的 .env 文件中读取旧配置，并抑制grep的错误输出
     if [ -f "$BACKEND_ENV_FILE" ]; then
-        OLD_DOMAIN_FROM_ENV=$(grep "^DOMAIN=" "$BACKEND_ENV_FILE" | cut -d= -f2)
+        OLD_DOMAIN_FROM_ENV=$(grep "^DOMAIN=" "$BACKEND_ENV_FILE" 2>/dev/null | cut -d= -f2)
+        CURRENT_DEL_PASSWORD=$(grep "^DELETE_PASSWORD=" "$BACKEND_ENV_FILE" 2>/dev/null | cut -d= -f2)
+        CURRENT_AGENT_PASSWORD=$(grep "^AGENT_INSTALL_PASSWORD=" "$BACKEND_ENV_FILE" 2>/dev/null | cut -d= -f2)
+        OLD_EMAIL=$(grep "^CERTBOT_EMAIL=" "$BACKEND_ENV_FILE" 2>/dev/null | cut -d= -f2)
+        ENV_FILE_EXISTS=true
     fi
 
     local DOMAIN_VALIDATED=false
     while [ "$DOMAIN_VALIDATED" == "false" ]; do
-        local CURRENT_PROMPT_DOMAIN="$OLD_DOMAIN_FROM_ENV" # 建议给用户的域名
-        local USER_INPUT_DOMAIN="" # 用户本次实际输入的域名
+        local USER_INPUT_DOMAIN=""
 
-        # 检查旧域名是否有效，如果无效则不建议使用
-        if [ -n "$CURRENT_PROMPT_DOMAIN" ] && \
-           ! [[ "$CURRENT_PROMPT_DOMAIN" == "server_name" ]] && \
-           [[ "$CURRENT_PROMPT_DOMAIN" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
-            # 如果存在看似有效的旧域名，询问用户是否继续使用
-            read -p "检测到旧域名: ${CURRENT_PROMPT_DOMAIN}。是否继续使用此域名? (y/N): " USE_OLD_DOMAIN_PROMPT
+        if [ -n "$OLD_DOMAIN_FROM_ENV" ] && \
+           ! [[ "$OLD_DOMAIN_FROM_ENV" == "server_name" ]] && \
+           [[ "$OLD_DOMAIN_FROM_ENV" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+            read -p "检测到旧域名: ${OLD_DOMAIN_FROM_ENV}。是否继续使用此域名? (y/N): " USE_OLD_DOMAIN_PROMPT
             if [[ "$USE_OLD_DOMAIN_PROMPT" == "y" || "$USE_OLD_DOMAIN_PROMPT" == "Y" ]]; then
-                DOMAIN="$CURRENT_PROMPT_DOMAIN"
+                DOMAIN="$OLD_DOMAIN_FROM_ENV"
                 echo "继续使用域名: $DOMAIN"
                 DOMAIN_VALIDATED=true
-                break # 域名已确认有效，退出循环
+                break
             else
                 read -p "请输入新的域名 (例如: monitor.yourdomain.com): " USER_INPUT_DOMAIN
             fi
         else
-            # 没有有效的旧域名或用户选择不使用旧域名，强制输入新域名
             read -p "请输入您解析到本服务器的域名 (例如: monitor.yourdomain.com): " USER_INPUT_DOMAIN
         fi
 
-        # 将用户输入作为本次验证的域名
         DOMAIN="$USER_INPUT_DOMAIN"
 
-        # 验证域名是否为空
         if [ -z "$DOMAIN" ]; then
             echo -e "${RED}错误：域名不能为空！请重新输入。${NC}"
-        elif [[ "$DOMAIN" == *" "* ]]; then # 检查空格
+        elif [[ "$DOMAIN" == *" "* ]]; then
             echo -e "${RED}错误：域名不能包含空格！请重新输入。${NC}"
-        elif [[ "$DOMAIN" == "server_name" ]]; then # 明确禁止 "server_name"
+        elif [[ "$DOMAIN" == "server_name" ]]; then
             echo -e "${RED}错误：域名不能是 'server_name'。请输入您的实际域名。${NC}"
-        elif ! [[ "$DOMAIN" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then # 基本的域名格式验证 (包含顶级域名)
+        elif ! [[ "$DOMAIN" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
             echo -e "${RED}错误：域名格式不正确。请确保只使用字母、数字、点和破折号，并包含有效顶级域名（如 .com, .net）。${NC}"
         else
-            DOMAIN_VALIDATED=true # 验证通过
+            DOMAIN_VALIDATED=true
         fi
-    done # 循环直到 DOMAIN_VALIDATED 为 true
+    done
 
-    # 密码输入部分 (保持原样，但确保会读取并保存到 .env)
-    echo -e "${YELLOW}如果已有密码，输入新密码将覆盖旧密码。留空表示不修改（保持旧密码）。${NC}"
-    # Read current passwords from .env
-    local CURRENT_DEL_PASSWORD=$(grep "^DELETE_PASSWORD=" "$BACKEND_ENV_FILE" | cut -d= -f2)
-    local CURRENT_AGENT_PASSWORD=$(grep "^AGENT_INSTALL_PASSWORD=" "$BACKEND_ENV_FILE" | cut -d= -f2)
-
-    read -s -p "请为【网页端删除功能】设置一个强密码 (当前: ${CURRENT_DEL_PASSWORD:+已设置}, 留空则不修改): " DEL_PASSWORD_INPUT
+    # 密码输入部分
     echo ""
-    read -s -p "请为【被控端安装功能】设置一个强密码 (当前: ${CURRENT_AGENT_PASSWORD:+已设置}, 留空则不修改): " AGENT_PASSWORD_INPUT
-    echo ""
-
-    DEL_PASSWORD="${DEL_PASSWORD_INPUT:-$CURRENT_DEL_PASSWORD}"
-    AGENT_PASSWORD="${AGENT_PASSWORD_INPUT:-$CURRENT_AGENT_PASSWORD}"
+    if [ "$ENV_FILE_EXISTS" = false ] || ( [ -z "$CURRENT_DEL_PASSWORD" ] && [ -z "$CURRENT_AGENT_PASSWORD" ] ); then
+        echo -e "${YELLOW}由于是首次安装或未检测到旧密码，请务必设置以下密码！${NC}"
+        read -s -p "请为【网页端删除功能】设置一个强密码: " DEL_PASSWORD_INPUT
+        echo ""
+        read -s -p "请为【被控端安装功能】设置一个强密码: " AGENT_PASSWORD_INPUT
+        echo ""
+        DEL_PASSWORD="$DEL_PASSWORD_INPUT"
+        AGENT_PASSWORD="$AGENT_PASSWORD_INPUT"
+    else
+        echo -e "${YELLOW}检测到现有密码。如果需要修改，请输入新密码；留空表示不修改（保持旧密码）。${NC}"
+        read -s -p "请为【网页端删除功能】设置一个强密码 (当前: ${CURRENT_DEL_PASSWORD:+已设置}): " DEL_PASSWORD_INPUT
+        echo ""
+        read -s -p "请为【被控端安装功能】设置一个强密码 (当前: ${CURRENT_AGENT_PASSWORD:+已设置}): " AGENT_PASSWORD_INPUT
+        echo ""
+        DEL_PASSWORD="${DEL_PASSWORD_INPUT:-$CURRENT_DEL_PASSWORD}"
+        AGENT_PASSWORD="${AGENT_PASSWORD_INPUT:-$CURRENT_AGENT_PASSWORD}"
+    fi
 
     if [ -z "$DEL_PASSWORD" ] || [ -z "$AGENT_PASSWORD" ]; then
         echo -e "${RED}错误：密码不能为空！首次安装或修改密码时，请务必设置！${NC}"
@@ -127,6 +134,10 @@ server {
         proxy_set_header Connection 'upgrade';
         proxy_set_header Host \$host;
         proxy_cache_bypass \$http_upgrade;
+        # 增加代理超时设置，防止后端响应慢导致连接关闭
+        proxy_connect_timeout 600;
+        proxy_send_timeout 600;
+        proxy_read_timeout 600;
     }
     
     location / {
@@ -135,7 +146,7 @@ server {
     }
 }
 EOF
-    # Remove existing symlink for previous domain if it's different
+    # 移除旧域名对应的 Nginx 符号链接（如果域名发生变化）
     if [ -n "$OLD_DOMAIN_FROM_ENV" ] && [ "$OLD_DOMAIN_FROM_ENV" != "$DOMAIN" ] && [ -f "/etc/nginx/sites-enabled/$OLD_DOMAIN_FROM_ENV" ]; then
         echo "--> 检测到域名更改，正在移除旧Nginx符号链接..."
         sudo rm -f "/etc/nginx/sites-enabled/$OLD_DOMAIN_FROM_ENV"
@@ -146,13 +157,8 @@ EOF
     # 4. 获取SSL证书 (如果证书不存在或需要续订)
     echo "--> 正在为 $DOMAIN 获取或续订SSL证书..."
 
-    local OLD_EMAIL=""
-    # 尝试从后端服务的 .env 文件中读取旧邮箱
-    if [ -f "$BACKEND_ENV_FILE" ]; then
-        OLD_EMAIL=$(grep "^CERTBOT_EMAIL=" "$BACKEND_ENV_FILE" | cut -d= -f2)
-    fi
-
-    # Check if a valid certificate already exists for the domain
+    # 检查 Certbot 是否已为该域名配置 HTTPS
+    # Certbot 0.28 及以后版本会在证书成功部署后，自动修改 Nginx 配置文件添加 443 端口配置
     if sudo certbot certificates -d "$DOMAIN" | grep -q "VALID"; then
         echo -e "${GREEN}检测到现有有效的SSL证书，跳过新证书申请。Certbot会自动处理续订。${NC}"
         EMAIL="${OLD_EMAIL}" # 如果有旧邮箱，则保留
@@ -179,11 +185,11 @@ EOF
         sudo certbot --nginx --agree-tos --redirect --non-interactive -m "$EMAIL" -d "$DOMAIN"
     fi
 
-
     # 5. 部署前端 (强制更新)
     echo "--> 正在部署/更新前端面板..."
     sudo mkdir -p /var/www/monitor-frontend
     sudo curl -s -L "https://raw.githubusercontent.com/cjap111/vps-monitor-panel/main/frontend/index.html" -o /var/www/monitor-frontend/index.html
+    # 替换前端HTML中的API_ENDPOINT，使其指向当前域名
     sudo sed -i "s|https://monitor.yourdomain.com/api|https://$DOMAIN/api|g" /var/www/monitor-frontend/index.html
     
     # 6. 部署后端 (强制更新)
@@ -247,7 +253,7 @@ install_agent() {
     local OLD_SERVER_ID=""
     local OLD_SERVER_NAME=""
     local OLD_SERVER_LOCATION=""
-    local OLD_BACKEND_DOMAIN=""
+    local OLD_BACKEND_URL=""
     local OLD_NET_INTERFACE=""
 
     if [ -f "$AGENT_PATH" ] && [ -f "$AGENT_SERVICE_PATH" ]; then
@@ -258,12 +264,12 @@ install_agent() {
         sudo systemctl stop monitor-agent.service > /dev/null 2>&1
         sudo systemctl disable monitor-agent.service > /dev/null 2>&1
         
-        # 尝试从旧脚本中读取配置
-        OLD_BACKEND_URL=$(grep "BACKEND_URL=" "$AGENT_PATH" | cut -d\" -f2)
-        OLD_SERVER_ID=$(grep "SERVER_ID=" "$AGENT_PATH" | cut -d\" -f2)
-        OLD_SERVER_NAME=$(grep "SERVER_NAME=" "$AGENT_PATH" | cut -d\" -f2)
-        OLD_SERVER_LOCATION=$(grep "SERVER_LOCATION=" "$AGENT_PATH" | cut -d\" -f2)
-        OLD_NET_INTERFACE=$(grep "NET_INTERFACE=" "$AGENT_PATH" | cut -d\" -f2)
+        # 尝试从旧脚本中读取配置，并抑制grep的错误输出
+        OLD_BACKEND_URL=$(grep "BACKEND_URL=" "$AGENT_PATH" 2>/dev/null | cut -d\" -f2)
+        OLD_SERVER_ID=$(grep "SERVER_ID=" "$AGENT_PATH" 2>/dev/null | cut -d\" -f2)
+        OLD_SERVER_NAME=$(grep "SERVER_NAME=" "$AGENT_PATH" 2>/dev/null | cut -d\" -f2)
+        OLD_SERVER_LOCATION=$(grep "SERVER_LOCATION=" "$AGENT_PATH" 2>/dev/null | cut -d\" -f2)
+        OLD_NET_INTERFACE=$(grep "NET_INTERFACE=" "$AGENT_PATH" 2>/dev/null | cut -d\" -f2)
 
         # 从完整 URL 中提取域名
         OLD_BACKEND_DOMAIN=$(echo "$OLD_BACKEND_URL" | sed 's#/api/report##')
@@ -311,7 +317,7 @@ install_agent() {
     fi
     echo -e "${GREEN}密码验证成功！正在继续安装/更新...${NC}"
 
-    # 3. 安装依赖 (已移除静默模式)
+    # 3. 安装依赖
     echo "--> 正在检查并安装/更新依赖 (sysstat, bc)..."
     dpkg -s sysstat >/dev/null 2>&1 || sudo apt-get install -y sysstat
     dpkg -s bc >/dev/null 2>&1 || sudo apt-get install -y bc
@@ -320,7 +326,7 @@ install_agent() {
         exit 1
     fi
 
-    # 4. 获取服务器信息 (如果是更新，尝试读取旧配置，否则提示输入)
+    # 4. 获取服务器信息
     local SERVER_ID_INPUT="$OLD_SERVER_ID"
     local SERVER_NAME_INPUT="$OLD_SERVER_NAME"
     local SERVER_LOCATION_INPUT="$OLD_SERVER_LOCATION"
@@ -367,7 +373,7 @@ install_agent() {
     sudo curl -s -L "https://raw.githubusercontent.com/cjap111/vps-monitor-panel/main/agent/agent.sh" -o /opt/monitor-agent/agent.sh
     sudo chmod +x /opt/monitor-agent/agent.sh
 
-    # 6. 更新Agent配置 (使用获取到的或用户输入的值)
+    # 6. 更新Agent配置
     sudo sed -i "s|BACKEND_URL=.*|BACKEND_URL=\"$BACKEND_DOMAIN/api/report\"|g" /opt/monitor-agent/agent.sh
     sudo sed -i "s|SERVER_ID=.*|SERVER_ID=\"$SERVER_ID_INPUT\"|g" /opt/monitor-agent/agent.sh
     sudo sed -i "s|SERVER_NAME=.*|SERVER_NAME=\"$SERVER_NAME_INPUT\"|g" /opt/monitor-agent/agent.sh
@@ -470,7 +476,7 @@ uninstall_agent() {
     sudo rm -f /etc/systemd/system/monitor-agent.service
     
     # 3. 重载Systemd
-    echo "--> 正在重载服务..."
+    echo "--> 正在重载服务...约5秒后完成"
     sudo systemctl daemon-reload
     
     echo -e "${GREEN}=====================================================${NC}"
