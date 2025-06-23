@@ -25,6 +25,19 @@
         .modal-backdrop { background-color: rgba(0,0,0,0.7); backdrop-filter: blur(4px); }
         .icon-btn { background: rgba(255,255,255,0.1); border-radius: 50%; padding: 4px; transition: background 0.2s; }
         .icon-btn:hover { background: rgba(255,255,255,0.2); }
+
+        /* Custom styles to prevent server name overflow */
+        /* Make the name container take available space and allow truncation */
+        .card .server-name-container {
+            flex-grow: 1; /* Allows it to take available space */
+            min-width: 0; /* Prevents overflow issues in flex container */
+            margin-right: 8px; /* Add some space between name and buttons */
+        }
+
+        /* Ensure truncate works well within its flex container */
+        .card .text-lg.font-bold.text-white.truncate {
+            min-width: 0; /* Important for truncation to work in flex items */
+        }
     </style>
 </head>
 <body class="text-gray-200">
@@ -46,14 +59,14 @@
     <template id="server-card-template">
         <div class="card rounded-lg p-5 flex flex-col space-y-4" data-server-id="">
             <div class="flex justify-between items-start">
-                <div>
+                <div class="server-name-container"> <!-- Added a wrapper for server name -->
                     <h2 class="text-lg font-bold text-white truncate" data-id="name">服务器名称</h2>
                     <div class="text-xs text-gray-400 flex items-center space-x-2 mt-1">
                          <i data-lucide="map-pin" class="w-4 h-4"></i>
                         <span data-id="location">位置</span>
                     </div>
                 </div>
-                <div class="flex items-center space-x-2">
+                <div class="flex items-center space-x-2 flex-shrink-0"> <!-- Added flex-shrink-0 to buttons container -->
                     <div class="flex items-center">
                         <span class="status-dot" data-id="status-dot"></span>
                         <span class="font-medium text-sm" data-id="status-text"></span>
@@ -208,7 +221,7 @@
             const template = document.getElementById('server-card-template');
             
             let servers = [];
-            // API端点将自动使用当前页面的域名
+            // API endpoint will automatically use the current page's domain
             const API_ENDPOINT = `${window.location.protocol}//${window.location.host}/api`;
             const GB_IN_BYTES = 1024 * 1024 * 1024;
             const MB_IN_BYTES = 1024 * 1024;
@@ -239,21 +252,21 @@
                 try {
                     const response = await fetch(`${API_ENDPOINT}/servers`);
                     if (!response.ok) {
-                        console.error("无法获取服务器数据");
+                        console.error("Failed to fetch server data");
                         return;
                     }
                     const serverList = await response.json();
                     servers = serverList;
                     renderAllServers();
                 } catch (error) {
-                    console.error("获取服务器列表时出错:", error);
+                    console.error("Error fetching server list:", error);
                 }
             }
 
             function renderAllServers() {
-                // 清空现有卡片
+                // Clear existing cards
                 serverGrid.innerHTML = '';
-                // 排序：在线的在前，离线的在后
+                // Sort: online first, then offline
                 servers.sort((a, b) => (b.online ? 1 : 0) - (a.online ? 1 : 0));
                 servers.forEach(server => {
                     const card = template.content.cloneNode(true).querySelector('.card');
@@ -312,28 +325,28 @@
                 query("total-net-down").textContent = (serverData.totalNet.down / GB_IN_BYTES).toFixed(2) + ' GB';
                 query("reset-info").textContent = `每月${serverData.resetDay}日重置`;
 
-                // 到期日期逻辑
+                // Expiration Date Logic
                 const expirationInfo = query("expiration-info");
                 if (serverData.expirationDate) {
                     const expirationDate = new Date(serverData.expirationDate);
                     const today = new Date();
-                    today.setHours(0, 0, 0, 0); // 将时间设置为午夜，以便精确计算天数
+                    today.setHours(0, 0, 0, 0); // Set time to midnight for accurate day calculation
 
                     const diffTime = expirationDate.getTime() - today.getTime();
-                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); // 向上取整，即使剩几个小时也算一天
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); // Round up, even if only a few hours left, count as a day
 
                     if (diffDays > 0) {
                         expirationInfo.textContent = `剩余 ${diffDays} 天`;
-                        expirationInfo.closest('.flex').classList.remove('text-red-500'); // 移除过期警告颜色
-                        expirationInfo.closest('.flex').classList.add('text-orange-300'); // 设置正常颜色
+                        expirationInfo.closest('.flex').classList.remove('text-red-500'); // Remove expired warning color
+                        expirationInfo.closest('.flex').classList.add('text-orange-300'); // Set normal color
                     } else if (diffDays === 0) {
                         expirationInfo.textContent = `今天到期`;
                         expirationInfo.closest('.flex').classList.remove('text-orange-300');
-                        expirationInfo.closest('.flex').classList.add('text-yellow-400'); // 警告颜色
+                        expirationInfo.closest('.flex').classList.add('text-yellow-400'); // Warning color
                     } else {
                         expirationInfo.textContent = `已过期 ${Math.abs(diffDays)} 天`;
                         expirationInfo.closest('.flex').classList.remove('text-orange-300');
-                        expirationInfo.closest('.flex').classList.add('text-red-500'); // 危险颜色
+                        expirationInfo.closest('.flex').classList.add('text-red-500'); // Danger color
                     }
                 } else {
                     expirationInfo.textContent = "未设置到期日期";
@@ -385,14 +398,14 @@
                 document.getElementById('settingTotalNetUp').value = (server.totalNet.up / GB_IN_BYTES).toFixed(2);
                 document.getElementById('settingTotalNetDown').value = (server.totalNet.down / GB_IN_BYTES).toFixed(2);
                 document.getElementById('settingResetDay').value = server.resetDay;
-                document.getElementById('settingsPassword').value = ''; // 清空密码字段
+                document.getElementById('settingsPassword').value = ''; // Clear password field
 
-                // 设置到期日期输入框的值
+                // Set value for expiration date input
                 if (server.expirationDate) {
-                    // 将 ISO 格式日期（如 "YYYY-MM-DD"）直接赋值给 date input
+                    // Assign ISO format date (e.g., "YYYY-MM-DD") directly to date input
                     document.getElementById('settingExpirationDate').value = server.expirationDate.split('T')[0];
                 } else {
-                    document.getElementById('settingExpirationDate').value = ''; // 如果未设置，则清空
+                    document.getElementById('settingExpirationDate').value = ''; // Clear if not set
                 }
 
                 settingsModal.style.display = 'flex';
@@ -409,14 +422,14 @@
             document.getElementById('serverSettingsForm').addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const serverId = document.getElementById('settingServerId').value;
-                const settingsPassword = document.getElementById('settingsPassword').value; // 获取密码
+                const settingsPassword = document.getElementById('settingsPassword').value; // Get password
 
                 if (!settingsPassword) {
-                    showMessage('输入错误', '请输入被控端安装密码！');
+                    showMessage('Input Error', 'Please enter agent installation password!');
                     return;
                 }
 
-                // 获取到期日期，如果为空则设为 null
+                // Get expiration date, set to null if empty
                 const expirationDateInput = document.getElementById('settingExpirationDate').value;
                 const expirationDate = expirationDateInput ? new Date(expirationDateInput).toISOString().split('T')[0] : null;
 
@@ -425,8 +438,8 @@
                     totalNetUp: parseFloat(document.getElementById('settingTotalNetUp').value) * GB_IN_BYTES,
                     totalNetDown: parseFloat(document.getElementById('settingTotalNetDown').value) * GB_IN_BYTES,
                     resetDay: parseInt(document.getElementById('settingResetDay').value),
-                    password: settingsPassword, // 将密码添加到请求体中
-                    expirationDate: expirationDate // 添加到期日期
+                    password: settingsPassword, // Add password to request body
+                    expirationDate: expirationDate // Add expiration date
                 };
 
                 try {
@@ -436,15 +449,15 @@
                         body: JSON.stringify(settings)
                     });
                     if (response.ok) {
-                        showMessage('成功', '设置更新成功！');
+                        showMessage('Success', 'Settings updated successfully!');
                         settingsModal.style.display = 'none';
                         fetchAndRenderServers();
                     } else {
                         const errorText = await response.text();
-                        showMessage('更新失败', `更新失败: ${errorText}`);
+                        showMessage('Update Failed', `Update failed: ${errorText}`);
                     }
                 } catch (error) {
-                    showMessage('请求失败', `请求失败: ${error.message}`);
+                    showMessage('Request Failed', `Request failed: ${error.message}`);
                 }
             });
             
@@ -453,7 +466,7 @@
                 const serverId = document.getElementById('deleteServerId').value;
                 const password = document.getElementById('deletePassword').value;
                 if (!password) {
-                    showMessage('输入错误', '请输入密码！');
+                    showMessage('Input Error', 'Please enter password!');
                     return;
                 }
 
@@ -465,16 +478,16 @@
                     });
 
                     if (response.ok) {
-                        showMessage('成功', '服务器删除成功！\n请注意：为了彻底移除此服务器，请务必前往对应的物理服务器执行被控端卸载命令。');
+                        showMessage('Success', 'Server deleted successfully!\nPlease note: To completely remove this server, please run the agent uninstallation command on the corresponding physical server.');
                         deleteModal.style.display = 'none';
                         document.getElementById('deletePassword').value = '';
                         fetchAndRenderServers();
                     } else {
                         const errorText = await response.text();
-                        showMessage('删除失败', `删除失败: ${errorText}`);
+                        showMessage('Delete Failed', `Delete failed: ${errorText}`);
                     }
                 } catch (error) {
-                    showMessage('请求失败', `请求失败: ${error.message}`);
+                    showMessage('Request Failed', `Request failed: ${error.message}`);
                 }
             });
 
