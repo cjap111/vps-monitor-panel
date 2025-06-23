@@ -495,8 +495,8 @@
                 }
 
                 // Update Total Net Traffic
-                const totalNetUpGB = (server.totalNet.up / GB_IN_BYTES).toFixed(2);
-                const totalNetDownGB = (server.totalNet.down / GB_IN_BYTES).toFixed(2);
+                const totalNetUpGB = (server.totalNet && typeof server.totalNet.up === 'number') ? (server.totalNet.up / GB_IN_BYTES).toFixed(2) : '0.00';
+                const totalNetDownGB = (server.totalNet && typeof server.totalNet.down === 'number') ? (server.totalNet.down / GB_IN_BYTES).toFixed(2) : '0.00';
                 const totalNetUpElement = cardElement.querySelector('[data-id="total-net-up"]');
                 const totalNetDownElement = cardElement.querySelector('[data-id="total-net-down"]');
                 const resetInfoElement = cardElement.querySelector('[data-id="reset-info"]');
@@ -812,8 +812,8 @@
                 if (detailDiskBarElement) detailDiskBarElement.style.width = `${diskUsagePercent}%`;
 
 
-                const detailTotalNetUpGB = (server.totalNet.up / GB_IN_BYTES).toFixed(2);
-                const detailTotalNetDownGB = (server.totalNet.down / GB_IN_BYTES).toFixed(2);
+                const detailTotalNetUpGB = (server.totalNet && typeof server.totalNet.up === 'number') ? (server.totalNet.up / GB_IN_BYTES).toFixed(2) : '0.00';
+                const detailTotalNetDownGB = (server.totalNet && typeof server.totalNet.down === 'number') ? (server.totalNet.down / GB_IN_BYTES).toFixed(2) : '0.00';
                 const detailTotalNetUpElement = document.getElementById('detailTotalNetUp');
                 const detailTotalNetDownElement = document.getElementById('detailTotalNetDown');
                 const detailResetInfoElement = document.getElementById('detailResetInfo');
