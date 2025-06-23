@@ -843,7 +843,8 @@
                     }
                 }
 
-                const detailExpirationInfo = document.getElementById('detailExpirationInfo');
+                // Corrected: get the expirationInfo element from the DOM
+                const detailExpirationInfo = document.getElementById('detailExpirationInfo'); 
                 if (detailExpirationInfo) {
                     if (server.expirationDate) {
                         const expDate = new Date(server.expirationDate);
@@ -855,26 +856,26 @@
                         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
                         if (diffDays > 0) {
-                            expirationInfo.textContent = `剩余 ${diffDays} 天`;
-                            expirationInfo.classList.remove('text-red-400', 'text-orange-400');
+                            detailExpirationInfo.textContent = `剩余 ${diffDays} 天`;
+                            detailExpirationInfo.classList.remove('text-red-400', 'text-orange-400');
                             if (diffDays <= 7) {
-                                expirationInfo.classList.add('text-orange-400');
+                                detailExpirationInfo.classList.add('text-orange-400');
                             } else {
-                                expirationInfo.classList.add('text-green-400');
+                                detailExpirationInfo.classList.add('text-green-400');
                             }
                         } else if (diffDays === 0) {
-                            expirationInfo.textContent = `今天到期`;
-                            expirationInfo.classList.remove('text-green-400', 'text-red-400');
-                            expirationInfo.classList.add('text-orange-400');
+                            detailExpirationInfo.textContent = `今天到期`;
+                            detailExpirationInfo.classList.remove('text-green-400', 'text-red-400');
+                            detailExpirationInfo.classList.add('text-orange-400');
                         } else {
-                            expirationInfo.textContent = `已过期 ${Math.abs(diffDays)} 天`;
-                            expirationInfo.classList.remove('text-orange-400', 'text-green-400');
-                            expirationInfo.classList.add('text-red-400');
+                            detailExpirationInfo.textContent = `已过期 ${Math.abs(diffDays)} 天`;
+                            detailExpirationInfo.classList.remove('text-orange-400', 'text-green-400');
+                            detailExpirationInfo.classList.add('text-red-400');
                         }
                     } else {
-                        expirationInfo.textContent = '到期日期: 未设置';
-                        expirationInfo.classList.remove('text-orange-400', 'text-red-400', 'text-green-400');
-                        expirationInfo.classList.add('text-gray-400');
+                        detailExpirationInfo.textContent = '到期日期: 未设置';
+                        detailExpirationInfo.classList.remove('text-orange-400', 'text-red-400', 'text-green-400');
+                        detailExpirationInfo.classList.add('text-gray-400');
                     }
                 }
             }
