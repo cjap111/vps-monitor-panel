@@ -43,59 +43,59 @@ install_server() {
 
     # 2. 获取用户输入 (如果是更新，尝试读取旧配置，否则提示输入)
     local BACKEND_ENV_FILE="/opt/monitor-backend/.env"
-    local OLD_DOMAIN=""
+    local OLD_DOMAIN_FROM_ENV="" # 从 .env 文件读取的旧域名
     
     # 尝试从后端服务的 .env 文件中读取旧域名 (最可靠的持久化配置)
     if [ -f "$BACKEND_ENV_FILE" ]; then
-        OLD_DOMAIN=$(grep "^DOMAIN=" "$BACKEND_ENV_FILE" | cut -d= -f2)
+        OLD_DOMAIN_FROM_ENV=$(grep "^DOMAIN=" "$BACKEND_ENV_FILE" | cut -d= -f2)
     fi
 
-    # 循环直到获取到有效域名
-    while true; do
-        local DOMAIN_INPUT="" # 用于存储用户本次输入
-        if [ -n "$OLD_DOMAIN" ]; then
-            read -p "检测到旧域名: ${OLD_DOMAIN}。是否继续使用此域名? (y/N): " USE_OLD_DOMAIN_PROMPT
+    local DOMAIN_VALIDATED=false
+    while [ "$DOMAIN_VALIDATED" == "false" ]; do
+        local CURRENT_PROMPT_DOMAIN="$OLD_DOMAIN_FROM_ENV" # 建议给用户的域名
+        local USER_INPUT_DOMAIN="" # 用户本次实际输入的域名
+
+        # 检查旧域名是否有效，如果无效则不建议使用
+        if [ -n "$CURRENT_PROMPT_DOMAIN" ] && \
+           ! [[ "$CURRENT_PROMPT_DOMAIN" == "server_name" ]] && \
+           [[ "$CURRENT_PROMPT_DOMAIN" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+            # 如果存在看似有效的旧域名，询问用户是否继续使用
+            read -p "检测到旧域名: ${CURRENT_PROMPT_DOMAIN}。是否继续使用此域名? (y/N): " USE_OLD_DOMAIN_PROMPT
             if [[ "$USE_OLD_DOMAIN_PROMPT" == "y" || "$USE_OLD_DOMAIN_PROMPT" == "Y" ]]; then
-                DOMAIN="$OLD_DOMAIN" # 确认使用旧域名
+                DOMAIN="$CURRENT_PROMPT_DOMAIN"
                 echo "继续使用域名: $DOMAIN"
-                break # 退出循环
+                DOMAIN_VALIDATED=true
+                break # 域名已确认有效，退出循环
             else
-                read -p "请输入新的域名 (例如: monitor.yourdomain.com): " DOMAIN_INPUT
+                read -p "请输入新的域名 (例如: monitor.yourdomain.com): " USER_INPUT_DOMAIN
             fi
         else
-            read -p "请输入您解析到本服务器的域名 (例如: monitor.yourdomain.com): " DOMAIN_INPUT
+            # 没有有效的旧域名或用户选择不使用旧域名，强制输入新域名
+            read -p "请输入您解析到本服务器的域名 (例如: monitor.yourdomain.com): " USER_INPUT_DOMAIN
         fi
 
-        # 如果用户输入了新域名，则使用新域名进行验证
-        if [ -n "$DOMAIN_INPUT" ]; then
-            DOMAIN="$DOMAIN_INPUT"
-        fi
+        # 将用户输入作为本次验证的域名
+        DOMAIN="$USER_INPUT_DOMAIN"
 
         # 验证域名是否为空
         if [ -z "$DOMAIN" ]; then
             echo -e "${RED}错误：域名不能为空！请重新输入。${NC}"
-            OLD_DOMAIN="" # 清空OLD_DOMAIN，确保下次循环强制输入
-            continue # 继续循环
-        fi
-
-        # 进一步验证域名格式
-        if [[ "$DOMAIN" == *" "* ]]; then # 检查空格
+        elif [[ "$DOMAIN" == *" "* ]]; then # 检查空格
             echo -e "${RED}错误：域名不能包含空格！请重新输入。${NC}"
         elif [[ "$DOMAIN" == "server_name" ]]; then # 明确禁止 "server_name"
             echo -e "${RED}错误：域名不能是 'server_name'。请输入您的实际域名。${NC}"
         elif ! [[ "$DOMAIN" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then # 基本的域名格式验证 (包含顶级域名)
             echo -e "${RED}错误：域名格式不正确。请确保只使用字母、数字、点和破折号，并包含有效顶级域名（如 .com, .net）。${NC}"
         else
-            break # 验证通过，退出循环
+            DOMAIN_VALIDATED=true # 验证通过
         fi
-        DOMAIN="" # 如果验证失败，清空DOMAIN，以便下一轮循环重新输入
-    done
+    done # 循环直到 DOMAIN_VALIDATED 为 true
 
     # 密码输入部分 (保持原样，但确保会读取并保存到 .env)
     echo -e "${YELLOW}如果已有密码，输入新密码将覆盖旧密码。留空表示不修改（保持旧密码）。${NC}"
     # Read current passwords from .env
-    local CURRENT_DEL_PASSWORD=$(grep "DELETE_PASSWORD=" "$BACKEND_ENV_FILE" | cut -d= -f2)
-    local CURRENT_AGENT_PASSWORD=$(grep "AGENT_INSTALL_PASSWORD=" "$BACKEND_ENV_FILE" | cut -d= -f2)
+    local CURRENT_DEL_PASSWORD=$(grep "^DELETE_PASSWORD=" "$BACKEND_ENV_FILE" | cut -d= -f2)
+    local CURRENT_AGENT_PASSWORD=$(grep "^AGENT_INSTALL_PASSWORD=" "$BACKEND_ENV_FILE" | cut -d= -f2)
 
     read -s -p "请为【网页端删除功能】设置一个强密码 (当前: ${CURRENT_DEL_PASSWORD:+已设置}, 留空则不修改): " DEL_PASSWORD_INPUT
     echo ""
@@ -135,16 +135,47 @@ server {
     }
 }
 EOF
+    # Remove existing symlink for previous domain if it's different
+    if [ -n "$OLD_DOMAIN_FROM_ENV" ] && [ "$OLD_DOMAIN_FROM_ENV" != "$DOMAIN" ] && [ -f "/etc/nginx/sites-enabled/$OLD_DOMAIN_FROM_ENV" ]; then
+        echo "--> 检测到域名更改，正在移除旧Nginx符号链接..."
+        sudo rm -f "/etc/nginx/sites-enabled/$OLD_DOMAIN_FROM_ENV"
+    fi
     sudo ln -s -f "$NGINX_CONF" /etc/nginx/sites-enabled/
     sudo nginx -t
 
     # 4. 获取SSL证书 (如果证书不存在或需要续订)
     echo "--> 正在为 $DOMAIN 获取或续订SSL证书..."
+
+    local OLD_EMAIL=""
+    # 尝试从后端服务的 .env 文件中读取旧邮箱
+    if [ -f "$BACKEND_ENV_FILE" ]; then
+        OLD_EMAIL=$(grep "^CERTBOT_EMAIL=" "$BACKEND_ENV_FILE" | cut -d= -f2)
+    fi
+
     # Check if a valid certificate already exists for the domain
     if sudo certbot certificates -d "$DOMAIN" | grep -q "VALID"; then
         echo -e "${GREEN}检测到现有有效的SSL证书，跳过新证书申请。Certbot会自动处理续订。${NC}"
+        EMAIL="${OLD_EMAIL}" # 如果有旧邮箱，则保留
     else
-        read -p "请输入您的邮箱地址 (用于Let's Encrypt证书续订提醒): " EMAIL
+        local EMAIL_INPUT=""
+        if [ -n "$OLD_EMAIL" ]; then
+            read -p "检测到旧邮箱地址: ${OLD_EMAIL}。是否继续使用此邮箱? (y/N): " USE_OLD_EMAIL_PROMPT
+            if [[ "$USE_OLD_EMAIL_PROMPT" == "y" || "$USE_OLD_EMAIL_PROMPT" == "Y" ]]; then
+                EMAIL="$OLD_EMAIL"
+                echo "继续使用邮箱: $EMAIL"
+            else
+                read -p "请输入您的邮箱地址 (用于Let's Encrypt证书续订提醒): " EMAIL_INPUT
+            fi
+        else
+            read -p "请输入您的邮箱地址 (用于Let's Encrypt证书续订提醒): " EMAIL_INPUT
+        fi
+
+        EMAIL="${EMAIL_INPUT:-$OLD_EMAIL}" # 使用新输入，如果没有则回退到旧邮箱
+        if [ -z "$EMAIL" ]; then
+            echo -e "${RED}错误：邮箱地址不能为空！申请SSL证书需要提供邮箱。${NC}"
+            exit 1 # 邮箱是申请新证书的必要条件
+        fi
+
         sudo certbot --nginx --agree-tos --redirect --non-interactive -m "$EMAIL" -d "$DOMAIN"
     fi
 
@@ -170,6 +201,7 @@ EOF
 DELETE_PASSWORD=$DEL_PASSWORD
 AGENT_INSTALL_PASSWORD=$AGENT_PASSWORD
 DOMAIN=$DOMAIN # 显式保存域名到 .env 文件
+${EMAIL:+CERTBOT_EMAIL=$EMAIL} # 如果邮箱已设置，则保存到 .env
 EOF
 
     # 8. 创建或更新Systemd服务
