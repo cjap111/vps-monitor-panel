@@ -42,40 +42,65 @@ install_server() {
     fi
 
     # 2. 获取用户输入 (如果是更新，尝试读取旧配置，否则提示输入)
-    local DOMAIN_FILE="/opt/monitor-backend/.env"
+    local BACKEND_ENV_FILE="/opt/monitor-backend/.env"
     local OLD_DOMAIN=""
     
-    # Attempt to read existing domain from Nginx config, if available
-    # This assumes the Nginx config file name contains the domain
-    if [ -d "/etc/nginx/sites-available/" ]; then
-        OLD_DOMAIN=$(grep -r "server_name" /etc/nginx/sites-available/ | grep -v "#" | head -n 1 | awk '{print $2}' | sed 's/;//')
+    # 尝试从后端服务的 .env 文件中读取旧域名 (最可靠的持久化配置)
+    if [ -f "$BACKEND_ENV_FILE" ]; then
+        OLD_DOMAIN=$(grep "^DOMAIN=" "$BACKEND_ENV_FILE" | cut -d= -f2)
     fi
 
-    if [ -n "$OLD_DOMAIN" ]; then
-        read -p "检测到旧域名: ${OLD_DOMAIN}。是否继续使用此域名? (y/N): " USE_OLD_DOMAIN
-        if [[ "$USE_OLD_DOMAIN" == "y" || "$USE_OLD_DOMAIN" == "Y" ]]; then
-            DOMAIN="$OLD_DOMAIN"
-            echo "继续使用域名: $DOMAIN"
+    # 循环直到获取到有效域名
+    while true; do
+        local DOMAIN_INPUT="" # 用于存储用户本次输入
+        if [ -n "$OLD_DOMAIN" ]; then
+            read -p "检测到旧域名: ${OLD_DOMAIN}。是否继续使用此域名? (y/N): " USE_OLD_DOMAIN_PROMPT
+            if [[ "$USE_OLD_DOMAIN_PROMPT" == "y" || "$USE_OLD_DOMAIN_PROMPT" == "Y" ]]; then
+                DOMAIN="$OLD_DOMAIN" # 确认使用旧域名
+                echo "继续使用域名: $DOMAIN"
+                break # 退出循环
+            else
+                read -p "请输入新的域名 (例如: monitor.yourdomain.com): " DOMAIN_INPUT
+            fi
         else
-            read -p "请输入您解析到本服务器的域名 (例如: monitor.yourdomain.com): " DOMAIN
+            read -p "请输入您解析到本服务器的域名 (例如: monitor.yourdomain.com): " DOMAIN_INPUT
         fi
-    else
-        read -p "请输入您解析到本服务器的域名 (例如: monitor.yourdomain.com): " DOMAIN
-    fi
 
-    if [ -z "$DOMAIN" ]; then
-        echo -e "${RED}错误：域名不能为空！${NC}"
-        exit 1
-    fi
+        # 如果用户输入了新域名，则使用新域名进行验证
+        if [ -n "$DOMAIN_INPUT" ]; then
+            DOMAIN="$DOMAIN_INPUT"
+        fi
 
+        # 验证域名是否为空
+        if [ -z "$DOMAIN" ]; then
+            echo -e "${RED}错误：域名不能为空！请重新输入。${NC}"
+            OLD_DOMAIN="" # 清空OLD_DOMAIN，确保下次循环强制输入
+            continue # 继续循环
+        fi
+
+        # 进一步验证域名格式
+        if [[ "$DOMAIN" == *" "* ]]; then # 检查空格
+            echo -e "${RED}错误：域名不能包含空格！请重新输入。${NC}"
+        elif [[ "$DOMAIN" == "server_name" ]]; then # 明确禁止 "server_name"
+            echo -e "${RED}错误：域名不能是 'server_name'。请输入您的实际域名。${NC}"
+        elif ! [[ "$DOMAIN" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then # 基本的域名格式验证 (包含顶级域名)
+            echo -e "${RED}错误：域名格式不正确。请确保只使用字母、数字、点和破折号，并包含有效顶级域名（如 .com, .net）。${NC}"
+        else
+            break # 验证通过，退出循环
+        fi
+        DOMAIN="" # 如果验证失败，清空DOMAIN，以便下一轮循环重新输入
+    done
+
+    # 密码输入部分 (保持原样，但确保会读取并保存到 .env)
     echo -e "${YELLOW}如果已有密码，输入新密码将覆盖旧密码。留空表示不修改（保持旧密码）。${NC}"
-    read -s -p "请为【网页端删除功能】设置一个强密码 (留空则不修改): " DEL_PASSWORD_INPUT
-    echo ""
-    read -s -p "请为【被控端安装功能】设置一个强密码 (留空则不修改): " AGENT_PASSWORD_INPUT
-    echo ""
+    # Read current passwords from .env
+    local CURRENT_DEL_PASSWORD=$(grep "DELETE_PASSWORD=" "$BACKEND_ENV_FILE" | cut -d= -f2)
+    local CURRENT_AGENT_PASSWORD=$(grep "AGENT_INSTALL_PASSWORD=" "$BACKEND_ENV_FILE" | cut -d= -f2)
 
-    local CURRENT_DEL_PASSWORD=$(grep "DELETE_PASSWORD=" "$DOMAIN_FILE" | cut -d= -f2)
-    local CURRENT_AGENT_PASSWORD=$(grep "AGENT_INSTALL_PASSWORD=" "$DOMAIN_FILE" | cut -d= -f2)
+    read -s -p "请为【网页端删除功能】设置一个强密码 (当前: ${CURRENT_DEL_PASSWORD:+已设置}, 留空则不修改): " DEL_PASSWORD_INPUT
+    echo ""
+    read -s -p "请为【被控端安装功能】设置一个强密码 (当前: ${CURRENT_AGENT_PASSWORD:+已设置}, 留空则不修改): " AGENT_PASSWORD_INPUT
+    echo ""
 
     DEL_PASSWORD="${DEL_PASSWORD_INPUT:-$CURRENT_DEL_PASSWORD}"
     AGENT_PASSWORD="${AGENT_PASSWORD_INPUT:-$CURRENT_AGENT_PASSWORD}"
@@ -141,9 +166,10 @@ EOF
 
     # 7. 创建或更新环境变量文件
     echo "--> 正在配置/更新后端环境变量..."
-    sudo tee /opt/monitor-backend/.env > /dev/null <<EOF
+    sudo tee "$BACKEND_ENV_FILE" > /dev/null <<EOF
 DELETE_PASSWORD=$DEL_PASSWORD
 AGENT_INSTALL_PASSWORD=$AGENT_PASSWORD
+DOMAIN=$DOMAIN # 显式保存域名到 .env 文件
 EOF
 
     # 8. 创建或更新Systemd服务
