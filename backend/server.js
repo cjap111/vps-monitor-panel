@@ -64,7 +64,8 @@ app.post('/api/report', (req, res) => {
             lastReset: `${now_date.getFullYear()}-${now_date.getMonth() + 1}`, 
             startTime: now,
             lastUpdated: now,
-            online: true
+            online: true,
+            expirationDate: null // 新增：为新服务器初始化到期日期
         };
     } else {
         // 已有服务器更新数据
@@ -84,9 +85,10 @@ app.post('/api/report', (req, res) => {
 
         // 合并新旧数据
         serverDataStore[data.id] = {
-            ...existingData, // 保留旧的设置如 totalNet, resetDay等
+            ...existingData, // 保留旧的设置如 totalNet, resetDay, expirationDate等
             ...data,         // 使用agent上报的最新动态数据覆盖
             totalNet: existingData.totalNet, // 确保 totalNet 不被覆盖
+            expirationDate: existingData.expirationDate, // 确保 expirationDate 不被agent上报的数据覆盖
             lastUpdated: now,
             online: true
         };
@@ -107,10 +109,10 @@ app.get('/api/servers', (req, res) => {
     res.json(Object.values(serverDataStore));
 });
 
-// POST /api/servers/:id/settings - 现在需要被控端安装密码
+// POST /api/servers/:id/settings - 现在需要被控端安装密码和到期日期
 app.post('/api/servers/:id/settings', (req, res) => {
     const { id } = req.params;
-    const { totalNetUp, totalNetDown, resetDay, password } = req.body; // 添加 password
+    const { totalNetUp, totalNetDown, resetDay, password, expirationDate } = req.body; // 添加 password 和 expirationDate
     
     // 验证被控端安装密码
     if (!password || password !== AGENT_INSTALL_PASSWORD) {
@@ -121,6 +123,7 @@ app.post('/api/servers/:id/settings', (req, res) => {
         serverDataStore[id].totalNet.up = totalNetUp;
         serverDataStore[id].totalNet.down = totalNetDown;
         serverDataStore[id].resetDay = resetDay;
+        serverDataStore[id].expirationDate = expirationDate; // 保存到期日期
         saveData(); // 保存数据
         res.status(200).send('设置更新成功。');
     } else {
