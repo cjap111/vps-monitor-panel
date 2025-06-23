@@ -791,7 +791,8 @@
                 }
 
 
-                const detailCpuUsage = (server.cpu !== undefined && server.cpu !== null) ? server.cpu.toFixed(1) : 0;
+                // Safely access server.cpu properties
+                const cpuUsage = (server.cpu !== undefined && server.cpu !== null) ? server.cpu.toFixed(1) : 0;
                 const detailCpuUsageElement = document.getElementById('detailCpuUsage');
                 const detailCpuBarElement = document.getElementById('detailCpuBar');
                 if (detailCpuUsageElement) detailCpuUsageElement.textContent = `${cpuUsage}%`;
@@ -863,7 +864,7 @@
                             detailExpirationInfo.classList.remove('text-green-400', 'text-red-400');
                             expirationInfo.classList.add('text-orange-400');
                         } else {
-                            detailExpirationInfo.textContent = `到期日期: 已过期 ${Math.abs(diffDays)} 天`;
+                            detailExpirationInfo.textContent = `已过期 ${Math.abs(diffDays)} 天`;
                             detailExpirationInfo.classList.remove('text-orange-400', 'text-green-400');
                             expirationInfo.classList.add('text-red-400');
                         }
@@ -1091,7 +1092,7 @@
                     });
 
                     if (response.ok) {
-                        showMessage('Success', 'Server deleted successfully!\nPlease note: To completely remove this server, please run the agent uninstallation command on the corresponding physical server.');
+                        showMessage('Success', 'Server deleted successfully!\nPlease note: To completely remove this server, please run the agent uninstallation command on the corresponding physical physical server.');
                         if (deleteModal) deleteModal.style.display = 'none';
                         if (document.getElementById('deletePassword')) document.getElementById('deletePassword').value = '';
                         fetchAndRenderServers();
