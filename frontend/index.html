@@ -263,6 +263,107 @@
                  return `${formatBytes(bytes, 2)}/s`;
             }
 
+            // Function to update a single server card
+            function updateServerCard(cardElement, server) {
+                // Update basic info
+                cardElement.querySelector('[data-id="name"]').textContent = server.name;
+                cardElement.querySelector('[data-id="location"]').textContent = server.location;
+                cardElement.querySelector('[data-id="os"]').textContent = server.os;
+
+                // Update status dot and text
+                const statusDot = cardElement.querySelector('[data-id="status-dot"]');
+                const statusText = cardElement.querySelector('[data-id="status-text"]');
+                if (server.online) {
+                    statusDot.classList.remove('status-offline');
+                    statusDot.classList.add('status-online');
+                    statusText.textContent = '在线';
+                    statusText.classList.remove('text-red-400');
+                    statusText.classList.add('text-green-400');
+                } else {
+                    statusDot.classList.remove('status-online');
+                    statusDot.classList.add('status-offline');
+                    statusText.textContent = '离线';
+                    statusText.classList.remove('text-green-400');
+                    statusText.classList.add('text-red-400');
+                }
+
+                // Update CPU
+                const cpuUsage = server.cpu ? server.cpu.toFixed(1) : 0;
+                cardElement.querySelector('[data-id="cpu-usage"]').textContent = `${cpuUsage}%`;
+                cardElement.querySelector('[data-id="cpu-bar"]').style.width = `${cpuUsage}%`;
+
+                // Update Memory
+                const memUsed = server.mem ? server.mem.used : 0;
+                const memTotal = server.mem ? server.mem.total : 0;
+                const memUsagePercent = memTotal > 0 ? (memUsed / memTotal * 100).toFixed(1) : 0;
+                cardElement.querySelector('[data-id="mem-usage"]').textContent = `${memUsed} MB / ${memTotal} MB`;
+                cardElement.querySelector('[data-id="mem-bar"]').style.width = `${memUsagePercent}%`;
+
+                // Update Disk
+                const diskUsed = server.disk ? server.disk.used : 0;
+                const diskTotal = server.disk ? server.disk.total : 0;
+                const diskUsagePercent = diskTotal > 0 ? (diskUsed / diskTotal * 100).toFixed(1) : 0;
+                cardElement.querySelector('[data-id="disk-usage"]').textContent = `${diskUsed} GB / ${diskTotal} GB`;
+                cardElement.querySelector('[data-id="disk-bar"]').style.width = `${diskUsagePercent}%`;
+
+                // Update Network Speed
+                const netDown = server.net ? server.net.down : 0;
+                const netUp = server.net ? server.net.up : 0;
+                cardElement.querySelector('[data-id="net-down"]').textContent = formatSpeed(netDown);
+                cardElement.querySelector('[data-id="net-up"]').textContent = formatSpeed(netUp);
+
+                // Update Uptime
+                const startTime = server.startTime;
+                if (startTime) {
+                    const uptimeMs = Date.now() - startTime;
+                    const uptimeDays = Math.floor(uptimeMs / (1000 * 60 * 60 * 24));
+                    cardElement.querySelector('[data-id="uptime"]').textContent = `在线 ${uptimeDays} 天`;
+                } else {
+                    cardElement.querySelector('[data-id="uptime"]').textContent = `在线 0 天`;
+                }
+
+                // Update Total Net Traffic
+                const totalNetUpGB = (server.totalNet.up / GB_IN_BYTES).toFixed(2);
+                const totalNetDownGB = (server.totalNet.down / GB_IN_BYTES).toFixed(2);
+                cardElement.querySelector('[data-id="total-net-up"]').textContent = `${totalNetUpGB} GB`;
+                cardElement.querySelector('[data-id="total-net-down"]').textContent = `${totalNetDownGB} GB`;
+                cardElement.querySelector('[data-id="reset-info"]').textContent = `每月${server.resetDay}日重置`;
+
+                // Update Expiration Date
+                const expirationInfo = cardElement.querySelector('[data-id="expiration-info"]');
+                if (server.expirationDate) {
+                    const expDate = new Date(server.expirationDate);
+                    // Format date as YYYY-MM-DD
+                    const formattedDate = expDate.toISOString().split('T')[0];
+                    expirationInfo.textContent = `到期日期: ${formattedDate}`;
+                    
+                    // Add styling for expiring soon
+                    const now = new Date();
+                    const diffTime = expDate.getTime() - now.getTime();
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                    if (diffDays <= 7 && diffDays > 0) {
+                        expirationInfo.classList.remove('text-red-400');
+                        expirationInfo.classList.add('text-orange-400'); // Orange for expiring soon
+                    } else if (diffDays <= 0) {
+                        expirationInfo.classList.remove('text-orange-400');
+                        expirationInfo.classList.add('text-red-400'); // Red for expired
+                        statusDot.classList.remove('status-online');
+                        statusDot.classList.add('status-offline');
+                        statusText.textContent = '已过期';
+                        statusText.classList.remove('text-green-400');
+                        statusText.classList.add('text-red-400');
+                    } else {
+                        expirationInfo.classList.remove('text-orange-400', 'text-red-400');
+                        expirationInfo.classList.add('text-gray-400'); // Default color
+                    }
+                } else {
+                    expirationInfo.textContent = '到期日期: 未设置';
+                    expirationInfo.classList.remove('text-orange-400', 'text-red-400');
+                    expirationInfo.classList.add('text-gray-400');
+                }
+            }
+
+
             async function fetchAndRenderServers() {
                 const loadingIndicator = document.getElementById('loading-indicator');
                 const errorDisplay = document.getElementById('error-display');
@@ -277,104 +378,19 @@
                     const response = await fetch(`${API_ENDPOINT}/servers`);
                     if (!response.ok) {
                         const errorText = await response.text();
-                        // Attempt to parse JSON error if available, otherwise use plain text
-                        let errorMessage = `HTTP Error: ${response.status}`;
-                        try {
-                            const errorJson = JSON.parse(errorText);
-                            errorMessage += ` - ${errorJson.message || JSON.stringify(errorJson)}`;
-                        } catch (e) {
-                            errorMessage += ` - ${errorText || response.statusText}`;
-                        }
-                        throw new Error(errorMessage);
+                        throw new Error(`HTTP Error: ${response.status} - ${errorText || response.statusText}`);
                     }
                     const serverList = await response.json();
                     servers = serverList;
                     renderAllServers();
+                    console.log(`[${new Date().toISOString()}] Successfully fetched and rendered ${serverList.length} servers.`); // Added success log
                 } catch (error) {
-                    console.error("获取服务器列表时出错:", error);
+                    console.error(`[${new Date().toISOString()}] Error fetching server list:`, error); // Added detailed error log
                     errorDisplay.classList.remove('hidden');
                     errorMessageContent.textContent = error.message;
                     serverGrid.innerHTML = ''; // Clear servers if error
                 } finally {
                     loadingIndicator.classList.add('hidden'); // Always hide loading indicator
-                }
-            }
-
-            function updateServerCard(card, serverData) {
-                const query = (selector) => card.querySelector(`[data-id="${selector}"]`);
-
-                query("name").textContent = serverData.name;
-                query("location").textContent = serverData.location || "N/A";
-                query("os").textContent = serverData.os || "Unknown OS";
-
-                const statusDot = query("status-dot");
-                const statusText = query("status-text");
-                if (serverData.online) {
-                    statusDot.className = "status-dot status-online";
-                    statusText.textContent = "在线";
-                    statusText.className = "font-medium text-sm text-green-400";
-                } else {
-                    statusDot.className = "status-dot status-offline";
-                    statusText.textContent = "离线";
-                    statusText.className = "font-medium text-sm text-red-500";
-                }
-                
-                // Resources
-                const cpuUsage = serverData.cpu.toFixed(1);
-                query("cpu-usage").textContent = `${cpuUsage}%`;
-                query("cpu-bar").style.width = `${cpuUsage}%`;
-
-                const memUsedGB = serverData.mem.used / 1024;
-                const memTotalGB = serverData.mem.total / 1024;
-                const memPercent = (serverData.mem.used / serverData.mem.total * 100).toFixed(1);
-                query("mem-usage").textContent = `${memUsedGB.toFixed(2)} GB / ${memTotalGB.toFixed(2)} GB`;
-                query("mem-bar").style.width = `${memPercent}%`;
-                
-                const diskUsedGB = serverData.disk.used / 1024;
-                const diskTotalGB = serverData.disk.total / 1024;
-                const diskPercent = (serverData.disk.used / serverData.disk.total * 100).toFixed(1);
-                query("disk-usage").textContent = `${diskUsedGB.toFixed(2)} GB / ${diskTotalGB.toFixed(2)} GB`;
-                query("disk-bar").style.width = `${diskPercent}%`;
-                
-                // Network
-                query("net-down").textContent = formatSpeed(serverData.net.down);
-                query("net-up").textContent = formatSpeed(serverData.net.up);
-                
-                const uptimeDays = ((Date.now() - serverData.startTime) / (1000 * 60 * 60 * 24)).toFixed(0);
-                query("uptime").textContent = `在线 ${uptimeDays} 天`;
-
-                // Total Traffic
-                query("total-net-up").textContent = (serverData.totalNet.up / GB_IN_BYTES).toFixed(2) + ' GB';
-                query("total-net-down").textContent = (serverData.totalNet.down / GB_IN_BYTES).toFixed(2) + ' GB';
-                query("reset-info").textContent = `每月${serverData.resetDay}日重置`;
-
-                // Expiration Date Logic
-                const expirationInfo = query("expiration-info");
-                if (serverData.expirationDate) {
-                    const expirationDate = new Date(serverData.expirationDate);
-                    const today = new Date();
-                    today.setHours(0, 0, 0, 0); // Set time to midnight for accurate day calculation
-
-                    const diffTime = expirationDate.getTime() - today.getTime();
-                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); // Round up, even if only a few hours left, count as a day
-
-                    if (diffDays > 0) {
-                        expirationInfo.textContent = `剩余 ${diffDays} 天`;
-                        expirationInfo.closest('.flex').classList.remove('text-red-500'); // Remove expired warning color
-                        expirationInfo.closest('.flex').classList.add('text-orange-300'); // Set normal color
-                    } else if (diffDays === 0) {
-                        expirationInfo.textContent = `今天到期`;
-                        expirationInfo.closest('.flex').classList.remove('text-orange-300');
-                        expirationInfo.closest('.flex').classList.add('text-yellow-400'); // Warning color
-                    } else {
-                        expirationInfo.textContent = `已过期 ${Math.abs(diffDays)} 天`;
-                        expirationInfo.closest('.flex').classList.remove('text-orange-300');
-                        expirationInfo.closest('.flex').classList.add('text-red-500'); // Danger color
-                    }
-                } else {
-                    expirationInfo.textContent = "未设置到期日期";
-                    expirationInfo.closest('.flex').classList.remove('text-red-500', 'text-yellow-400');
-                    expirationInfo.closest('.flex').classList.add('text-gray-500');
                 }
             }
 
