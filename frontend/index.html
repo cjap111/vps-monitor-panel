@@ -40,9 +40,17 @@
         }
 
         /* Styles for the detail modal to control height */
-        .detail-modal-content-wrapper {
-            max-height: 80vh; /* Set a maximum height relative to viewport height */
-            overflow-y: auto; /* Enable vertical scrolling if content overflows */
+        /* Make the modal content itself a flex container and set its max-height */
+        #serverDetailModal > div { /* Target the inner modal content div */
+            max-height: 90vh; /* Set a maximum height for the modal itself */
+            display: flex;
+            flex-direction: column;
+        }
+
+        .detail-modal-scroll-content { /* New class for the scrollable part */
+            flex-grow: 1; /* Allow this part to grow and take available space */
+            overflow-y: auto; /* Enable vertical scrolling */
+            padding-right: 1rem; /* Add some padding for scrollbar if needed */
         }
     </style>
 </head>
@@ -130,7 +138,7 @@
                 </div>
                 <div class="flex justify-between items-center pl-1">
                     <span class="flex items-center space-x-1.5 text-red-400"><i data-lucide="arrow-up" class="w-3 h-3"></i><span data-id="total-net-up" class="font-mono">0 GB</span></span>
-                    <span class="flex items-center space-x-1.5 text-cyan-400"><i data-lucide="arrow-down" class="w-3 h-3"></i><span class="font-mono">0 GB</span></span>
+                    <span class="flex items-center space-x-1.5 text-cyan-400"><i data-lucide="arrow-down" class="w-3 h-3"></i><span data-id="total-net-down" class="font-mono">0 GB</span></span>
                 </div>
                  <!-- 新增的到期日期显示 -->
                 <div class="flex justify-between items-center pl-1 pt-1">
@@ -250,7 +258,7 @@
             </div>
 
             <!-- Scrollable content wrapper -->
-            <div class="flex-grow overflow-y-auto pr-2 detail-modal-content-wrapper">
+            <div class="flex-grow overflow-y-auto pr-2 detail-modal-scroll-content">
                 <div class="space-y-6">
                     <!-- CPU -->
                     <div>
@@ -745,8 +753,8 @@
                     }
                 } else {
                     detailExpirationInfo.textContent = '到期日期: 未设置';
-                    detailExpirationInfo.classList.remove('text-orange-400', 'text-red-400', 'text-green-400');
-                    detailExpirationInfo.classList.add('text-gray-400');
+                    expirationInfo.classList.remove('text-orange-400', 'text-red-400', 'text-green-400');
+                    expirationInfo.classList.add('text-gray-400');
                 }
             }
 
