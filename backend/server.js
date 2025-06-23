@@ -186,9 +186,9 @@ function checkAndResetTraffic() {
     }
 }
 
-
-app.listen(PORT, '0.0.0.0', () => { // Changed from '127.0.0.1' to '0.0.0.0'
-    console.log(`Monitor backend server running on http://0.0.0.0:${PORT}`); // Updated console log message
+// 将监听地址从 '127.0.0.1' 修改为 '0.0.0.0'
+app.listen(PORT, '0.0.0.0', () => { 
+    console.log(`Monitor backend server running on http://0.0.0.0:${PORT}`); 
     // 每小时检查一次是否需要重置流量
     setInterval(checkAndResetTraffic, 1000 * 60 * 60); 
     // 启动时立即执行一次检查
