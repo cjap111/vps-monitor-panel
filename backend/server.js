@@ -71,13 +71,15 @@ app.post('/api/report', (req, res) => {
             ...data,
             totalNet: { up: 0, down: 0 },
             resetDay: 1,
-            // Record last reset month in YYYY-M format
+            // Record last reset month in `YYYY-M` format
             lastReset: `${now_date.getFullYear()}-${now_date.getMonth() + 1}`, 
             startTime: now,
             lastUpdated: now,
             online: true,
-            expirationDate: null, // Added: Initialize expiration date for new server
-            cpuModel: data.cpuModel || null // Added: Initialize cpuModel for new server
+            expirationDate: null, // Initialize expiration date for new server
+            cpuModel: data.cpuModel || null, // Initialize cpuModel for new server
+            memModel: data.memModel || null, // Initialize memModel for new server
+            diskModel: data.diskModel || null // Initialize diskModel for new server
         };
         console.log(`[${new Date().toISOString()}] New server ${data.id} added.`); // Log new server addition
     } else {
@@ -103,6 +105,8 @@ app.post('/api/report', (req, res) => {
             totalNet: existingData.totalNet, // Ensure totalNet is not overwritten
             expirationDate: existingData.expirationDate, // Ensure expirationDate is not overwritten by agent data
             cpuModel: data.cpuModel || existingData.cpuModel, // Ensure cpuModel is updated if provided, otherwise preserved
+            memModel: data.memModel || existingData.memModel, // Ensure memModel is updated if provided, otherwise preserved
+            diskModel: data.diskModel || existingData.diskModel, // Ensure diskModel is updated if provided, otherwise preserved
             lastUpdated: now,
             online: true
         };
@@ -143,7 +147,7 @@ app.post('/api/servers/:id/settings', (req, res) => {
         serverDataStore[id].totalNet.down = totalNetDown;
         serverDataStore[id].resetDay = resetDay;
         serverDataStore[id].expirationDate = expirationDate; // Save expiration date
-        // Note: cpuModel is not updated via settings route, it's only updated by agent reports.
+        // Note: cpuModel, memModel, diskModel are not updated via settings route, they are only updated by agent reports.
         saveData(); // Save data
         console.log(`[${new Date().toISOString()}] Server ${id} settings updated successfully.`); // Log success
         res.status(200).send('Settings updated successfully.');
@@ -197,7 +201,7 @@ app.post('/api/verify-agent-password', (req, res) => {
 function checkAndResetTraffic() {
     const now = new Date();
     const currentDay = now.getDate();
-    // Use YYYY-M format
+    // Use `YYYY-M` format
     const currentMonthYear = `${now.getFullYear()}-${now.getMonth() + 1}`;
     let changed = false;
 
