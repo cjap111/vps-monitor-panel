@@ -151,7 +151,7 @@
                 </div>
                 <div class="flex justify-between items-center pl-1">
                     <span class="flex items-center space-x-1.5 text-red-400"><i data-lucide="arrow-up" class="w-3 h-3"></i><span data-id="total-net-up" class="font-mono">0 GB</span></span>
-                    <span class="flex items-center space-x-1.5 text-cyan-400"><i data-lucide="arrow-down" class="w-3 h-3"></i><span data-id="total-net-down" class="font-mono">0 GB</span></span>
+                    <span class="flex items-center space-x-1.5 text-cyan-400"><i data-lucide="arrow-down" class="w-3 h-3"></i><span class="font-mono">0 GB</span></span>
                 </div>
                  <!-- 新增的到期日期显示 -->
                 <div class="flex justify-between items-center pl-1 pt-1">
@@ -548,9 +548,9 @@
                 const errorMessageContent = document.getElementById('error-message-content');
 
                 // Show loading indicator, hide error
-                loadingIndicator.classList.remove('hidden');
-                errorDisplay.classList.add('hidden');
-                errorMessageContent.textContent = ''; // Clear previous error
+                if (loadingIndicator) loadingIndicator.classList.remove('hidden');
+                if (errorDisplay) errorDisplay.classList.add('hidden');
+                if (errorMessageContent) errorMessageContent.textContent = ''; // Clear previous error
 
                 try {
                     const response = await fetch(`${API_ENDPOINT}/servers`);
@@ -564,22 +564,22 @@
                     console.log(`[${new Date().toISOString()}] Successfully fetched and rendered ${serverList.length} servers.`); // Added success log
                 } catch (error) {
                     console.error(`[${new Date().toISOString()}] Error fetching server list:`, error); // Added detailed error log
-                    errorDisplay.classList.remove('hidden');
-                    errorMessageContent.textContent = error.message;
-                    serverGrid.innerHTML = ''; // Clear servers if error
+                    if (errorDisplay) errorDisplay.classList.remove('hidden');
+                    if (errorMessageContent) errorMessageContent.textContent = error.message;
+                    if (serverGrid) serverGrid.innerHTML = ''; // Clear servers if error
                 } finally {
-                    loadingIndicator.classList.add('hidden'); // Always hide loading indicator
+                    if (loadingIndicator) loadingIndicator.classList.add('hidden'); // Always hide loading indicator
                 }
             }
 
             function renderAllServers() {
-                serverGrid.innerHTML = ''; // Clear existing cards
+                if (serverGrid) serverGrid.innerHTML = ''; // Clear existing cards
 
                 if (servers.length === 0) {
                     const noServersMessage = document.createElement('div');
                     noServersMessage.className = 'col-span-full text-center text-gray-400 p-8';
                     noServersMessage.innerHTML = '<p>暂无服务器数据。请添加服务器并确保Agent已成功安装。</p>';
-                    serverGrid.appendChild(noServersMessage);
+                    if (serverGrid) serverGrid.appendChild(noServersMessage);
                 } else {
                     // Sort: online first, then offline
                     servers.sort((a, b) => (b.online ? 1 : 0) - (a.online ? 1 : 0));
@@ -587,7 +587,7 @@
                         const card = template.content.cloneNode(true).querySelector('.card');
                         card.dataset.serverId = server.id;
                         updateServerCard(card, server);
-                        serverGrid.appendChild(card);
+                        if (serverGrid) serverGrid.appendChild(card);
                     });
                 }
                 lucide.createIcons();
@@ -601,8 +601,10 @@
 
             document.getElementById('addServerBtn').addEventListener('click', () => {
                 const command = `curl -sL https://raw.githubusercontent.com/cjap111/vps-monitor-panel/main/install.sh | bash -s -- 2`;
-                document.getElementById('installCommand').textContent = command;
-                addModal.style.display = 'flex';
+                if (document.getElementById('installCommand')) {
+                    document.getElementById('installCommand').textContent = command;
+                }
+                if (addModal) addModal.style.display = 'flex';
                 lucide.createIcons();
             });
 
@@ -658,29 +660,34 @@
             function openSettingsModal(serverId) {
                 const server = servers.find(s => s.id == serverId);
                 if (!server) return;
-                document.getElementById('settingServerId').value = server.id;
-                document.getElementById('settingTotalNetUp').value = (server.totalNet.up / GB_IN_BYTES).toFixed(2);
-                document.getElementById('settingTotalNetDown').value = (server.totalNet.down / GB_IN_BYTES).toFixed(2);
-                document.getElementById('settingResetDay').value = server.resetDay;
-                document.getElementById('settingsPassword').value = ''; // Clear password field
+                
+                if (document.getElementById('settingServerId')) document.getElementById('settingServerId').value = server.id;
+                if (document.getElementById('settingTotalNetUp')) document.getElementById('settingTotalNetUp').value = (server.totalNet.up / GB_IN_BYTES).toFixed(2);
+                if (document.getElementById('settingTotalNetDown')) document.getElementById('settingTotalNetDown').value = (server.totalNet.down / GB_IN_BYTES).toFixed(2);
+                if (document.getElementById('settingResetDay')) document.getElementById('settingResetDay').value = server.resetDay;
+                if (document.getElementById('settingsPassword')) document.getElementById('settingsPassword').value = ''; // Clear password field
 
                 // Set value for expiration date input
-                if (server.expirationDate) {
-                    // Assign ISO format date (e.g., "YYYY-MM-DD") directly to date input
-                    document.getElementById('settingExpirationDate').value = server.expirationDate; // Assuming it's alreadyYYYY-MM-DD from backend
-                } else {
-                    document.getElementById('settingExpirationDate').value = ''; // Clear if not set
+                const settingExpirationDateElement = document.getElementById('settingExpirationDate');
+                if (settingExpirationDateElement) {
+                    if (server.expirationDate) {
+                        // Assign ISO format date (e.g., "YYYY-MM-DD") directly to date input
+                        settingExpirationDateElement.value = server.expirationDate; // Assuming it's alreadyYYYY-MM-DD from backend
+                    } else {
+                        settingExpirationDateElement.value = ''; // Clear if not set
+                    }
                 }
 
-                settingsModal.style.display = 'flex';
+                if (settingsModal) settingsModal.style.display = 'flex';
             }
 
             function openDeleteModal(serverId) {
                 const server = servers.find(s => s.id == serverId);
                 if (!server) return;
-                document.getElementById('deleteServerName').textContent = server.name;
-                document.getElementById('deleteServerId').value = serverId;
-                deleteModal.style.display = 'flex';
+                
+                if (document.getElementById('deleteServerName')) document.getElementById('deleteServerName').textContent = server.name;
+                if (document.getElementById('deleteServerId')) document.getElementById('deleteServerId').value = serverId;
+                if (deleteModal) deleteModal.style.display = 'flex';
             }
 
             // Function to open server detail modal
@@ -699,7 +706,7 @@
                 updateDetailModalData(server);
                 initDetailCharts(); // Initialize charts before first data fetch
 
-                detailModal.style.display = 'flex';
+                if (detailModal) detailModal.style.display = 'flex';
                 lucide.createIcons();
 
                 // Start fetching and updating detail data every second
@@ -714,7 +721,8 @@
                 try {
                     const response = await fetch(`${API_ENDPOINT}/servers`); // Fetch all servers, then find the specific one
                     if (!response.ok) {
-                        throw new Error(`HTTP Error: ${response.status} - ${response.statusText}`);
+                        const errorText = await response.text();
+                        throw new Error(`HTTP Error: ${response.status} - ${errorText || response.statusText}`);
                     }
                     const serverList = await response.json();
                     const server = serverList.find(s => s.id === serverId);
@@ -725,7 +733,7 @@
                     } else {
                         // Server might have been deleted or gone offline
                         clearInterval(detailViewInterval);
-                        detailModal.style.display = 'none';
+                        if (detailModal) detailModal.style.display = 'none';
                         showMessage('服务器已移除', '您尝试查看的服务器已不再可用。');
                         fetchAndRenderServers(); // Refresh main grid
                     }
@@ -733,7 +741,7 @@
                     console.error(`Error fetching server detail for ${serverId}:`, error);
                     // Optionally display an error within the modal or close it
                     clearInterval(detailViewInterval);
-                    detailModal.style.display = 'none';
+                    if (detailModal) detailModal.style.display = 'none';
                     showMessage('加载失败', `无法加载服务器详细信息: ${error.message}`);
                     fetchAndRenderServers(); // Refresh main grid
                 }
@@ -779,11 +787,11 @@
 
                 const detailMemUsed = server.mem ? server.mem.used : 0;
                 const detailMemTotal = server.mem ? server.mem.total : 0;
-                const detailMemUsagePercent = detailMemTotal > 0 ? (detailMemUsed / detailMemTotal * 100).toFixed(1) : 0;
+                const detailMemUsagePercent = memTotal > 0 ? (detailMemUsed / memTotal * 100).toFixed(1) : 0;
                 const detailMemUsageElement = document.getElementById('detailMemUsage');
                 const detailMemBarElement = document.getElementById('detailMemBar');
                 if (detailMemUsageElement) detailMemUsageElement.textContent = `${detailMemUsed} MB / ${detailMemTotal} MB`;
-                if (detailMemBarElement) detailMemBarElement.style.width = `${detailMemUsagePercent}%`;
+                if (memBarElement) detailMemBarElement.style.width = `${memUsagePercent}%`;
 
                 const detailDiskUsedMB = server.disk ? server.disk.used : 0;
                 const detailDiskTotalMB = server.disk ? server.disk.total : 0;
@@ -792,8 +800,8 @@
                 const detailDiskUsagePercent = detailDiskTotalMB > 0 ? (detailDiskUsedMB / detailDiskTotalMB * 100).toFixed(1) : 0;
                 const detailDiskUsageElement = document.getElementById('detailDiskUsage');
                 const detailDiskBarElement = document.getElementById('detailDiskBar');
-                if (detailDiskUsageElement) detailDiskUsageElement.textContent = `${detailDiskUsedGB} GB / ${detailDiskTotalGB} GB`;
-                if (detailDiskBarElement) detailDiskBarElement.style.width = `${detailDiskUsagePercent}%`;
+                if (detailDiskUsageElement) detailDiskUsageElement.textContent = `${diskUsedGB} GB / ${diskTotalGB} GB`;
+                if (detailDiskBarElement) detailDiskBarElement.style.width = `${diskUsagePercent}%`;
 
 
                 const detailTotalNetUpGB = (server.totalNet.up / GB_IN_BYTES).toFixed(2);
