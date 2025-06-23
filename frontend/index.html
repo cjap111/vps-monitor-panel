@@ -300,10 +300,15 @@
                 cardElement.querySelector('[data-id="mem-bar"]').style.width = `${memUsagePercent}%`;
 
                 // Update Disk
-                const diskUsed = server.disk ? server.disk.used : 0;
-                const diskTotal = server.disk ? server.disk.total : 0;
-                const diskUsagePercent = diskTotal > 0 ? (diskUsed / diskTotal * 100).toFixed(1) : 0;
-                cardElement.querySelector('[data-id="disk-usage"]').textContent = `${diskUsed} GB / ${diskTotal} GB`;
+                const diskUsedMB = server.disk ? server.disk.used : 0;
+                const diskTotalMB = server.disk ? server.disk.total : 0;
+                
+                // Convert MB to GB for display
+                const diskUsedGB = (diskUsedMB / 1024).toFixed(2); // Keep 2 decimal places for GB
+                const diskTotalGB = (diskTotalMB / 1024).toFixed(2); // Keep 2 decimal places for GB
+
+                const diskUsagePercent = diskTotalMB > 0 ? (diskUsedMB / diskTotalMB * 100).toFixed(1) : 0;
+                cardElement.querySelector('[data-id="disk-usage"]').textContent = `${diskUsedGB} GB / ${diskTotalGB} GB`;
                 cardElement.querySelector('[data-id="disk-bar"]').style.width = `${diskUsagePercent}%`;
 
                 // Update Network Speed
