@@ -62,58 +62,74 @@ app.post('/api/report', (req, res) => {
     }
 
     const now = Date.now();
-    const existingData = serverDataStore[data.id];
+    let existingData = serverDataStore[data.id]; // Use 'let' to allow reassignment
 
-    if (!existingData) {
-        // First report for a new server
-        const now_date = new Date();
-        serverDataStore[data.id] = {
-            ...data,
-            totalNet: { up: 0, down: 0 },
-            resetDay: 1,
-            // Record last reset month in `YYYY-M` format
-            lastReset: `${now_date.getFullYear()}-${now_date.getMonth() + 1}`, 
+    // Initialize server data if it's a new server or data is malformed
+    if (!existingData || !existingData.totalNet || !existingData.rawTotalNet) {
+        existingData = {
+            id: data.id,
+            name: data.name,
+            location: data.location,
+            os: data.os,
+            cpu: data.cpu,
+            mem: data.mem,
+            disk: data.disk,
+            net: data.net, // Current network speed
+            rawTotalNet: { up: data.rawTotalNet.up, down: data.rawTotalNet.down }, // Initialize with current raw data
+            totalNet: { up: 0, down: 0 }, // Initialize accumulated total traffic
+            resetDay: 1, // Default reset day
+            lastReset: `${new Date().getFullYear()}-${new Date().getMonth() + 1}`,
             startTime: now,
             lastUpdated: now,
             online: true,
-            expirationDate: null, // Initialize expiration date for new server
-            cpuModel: data.cpuModel || null, // Initialize cpuModel for new server
-            memModel: data.memModel || null, // Initialize memModel for new server
-            diskModel: data.diskModel || null // Initialize diskModel for new server
+            expirationDate: null,
+            cpuModel: data.cpuModel || null,
+            memModel: data.memModel || null,
+            diskModel: data.diskModel || null
         };
-        console.log(`[${new Date().toISOString()}] New server ${data.id} added.`); // Log new server addition
-    } else {
-        // Update data for existing server
-        let upBytesSinceLast = 0;
-        let downBytesSinceLast = 0;
-        
-        // Robustness check: ensure rawTotalNet exists and values are increasing (prevents agent reboot resetting count)
-        if (existingData.rawTotalNet && data.rawTotalNet.up >= existingData.rawTotalNet.up) {
-            upBytesSinceLast = data.rawTotalNet.up - existingData.rawTotalNet.up;
-        }
-        if (existingData.rawTotalNet && data.rawTotalNet.down >= existingData.rawTotalNet.down) {
-            downBytesSinceLast = data.rawTotalNet.down - existingData.rawTotalNet.down;
-        }
-        
-        existingData.totalNet.up += upBytesSinceLast;
-        existingData.totalNet.down += downBytesSinceLast;
-
-        // Merge new and old data
-        serverDataStore[data.id] = {
-            ...existingData, // Preserve old settings like totalNet, resetDay, expirationDate etc.
-            ...data,         // Overwrite with latest dynamic data from agent report
-            totalNet: existingData.totalNet, // Ensure totalNet is not overwritten
-            expirationDate: existingData.expirationDate, // Ensure expirationDate is not overwritten by agent data
-            cpuModel: data.cpuModel || existingData.cpuModel, // Ensure cpuModel is updated if provided, otherwise preserved
-            memModel: data.memModel || existingData.memModel, // Ensure memModel is updated if provided, otherwise preserved
-            diskModel: data.diskModel || existingData.diskModel, // Ensure diskModel is updated if provided, otherwise preserved
-            lastUpdated: now,
-            online: true
-        };
-        console.log(`[${new Date().toISOString()}] Server ${data.id} updated.`); // Log server update
+        console.log(`[${new Date().toISOString()}] New server ${data.id} added or re-initialized due to missing data.`);
     }
 
-    saveData(); // Save data
+    let upBytesSinceLast = 0;
+    let downBytesSinceLast = 0;
+
+    // Traffic calculation logic for accumulated data:
+    // If current raw counter is less than last known raw counter, assume agent reset/reboot.
+    // In this case, the current raw counter represents the traffic since the reboot,
+    // so we add the current raw value as the increment for this specific interval.
+    if (data.rawTotalNet.up < existingData.rawTotalNet.up) {
+        console.warn(`[${new Date().toISOString()}] Server ${data.id}: Upload raw counter reset detected. Adding current reported raw value.`);
+        upBytesSinceLast = data.rawTotalNet.up;
+    } else {
+        upBytesSinceLast = data.rawTotalNet.up - existingData.rawTotalNet.up;
+    }
+
+    if (data.rawTotalNet.down < existingData.rawTotalNet.down) {
+        console.warn(`[${new Date().toISOString()}] Server ${data.id}: Download raw counter reset detected. Adding current reported raw value.`);
+        downBytesSinceLast = data.rawTotalNet.down;
+    } else {
+        downBytesSinceLast = data.rawTotalNet.down - existingData.rawTotalNet.down;
+    }
+
+    // Ensure increments are non-negative (traffic should not decrease)
+    upBytesSinceLast = Math.max(0, upBytesSinceLast);
+    downBytesSinceLast = Math.max(0, downBytesSinceLast);
+
+    // Add increments to total traffic
+    existingData.totalNet.up += upBytesSinceLast;
+    existingData.totalNet.down += downBytesSinceLast;
+
+    // Update serverDataStore with all latest information
+    serverDataStore[data.id] = {
+        ...existingData, // Preserve existing accumulated data and settings
+        ...data,         // Overwrite with latest dynamic data from agent report (cpu, mem, disk, net)
+        totalNet: existingData.totalNet, // Explicitly keep the updated totalNet
+        rawTotalNet: { up: data.rawTotalNet.up, down: data.rawTotalNet.down }, // Crucial: Update rawTotalNet for the next comparison
+        lastUpdated: now, // Always update lastUpdated timestamp
+        online: true // Mark as online
+    };
+
+    saveData(); // Save data to file
     res.status(200).send('Report received.');
 });
 
@@ -132,7 +148,7 @@ app.get('/api/servers', (req, res) => {
 // POST /api/servers/:id/settings - Update server settings (requires agent installation password)
 app.post('/api/servers/:id/settings', (req, res) => {
     const { id } = req.params;
-    const { totalNetUp, totalNetDown, resetDay, password, expirationDate } = req.body; // Add password and expirationDate
+    const { totalNetUp, totalNetDown, resetDay, password, expirationDate } = req.body; 
     
     console.log(`[${new Date().toISOString()}] Received settings update for server ID: ${id}`); // Added log for settings updates
 
@@ -147,7 +163,7 @@ app.post('/api/servers/:id/settings', (req, res) => {
         serverDataStore[id].totalNet.down = totalNetDown;
         serverDataStore[id].resetDay = resetDay;
         serverDataStore[id].expirationDate = expirationDate; // Save expiration date
-        // Note: cpuModel, memModel, diskModel are not updated via settings route, they are only updated by agent reports.
+        // Note: cpuModel, memModel, diskModel, rawTotalNet are not updated via settings route, they are only updated by agent reports.
         saveData(); // Save data
         console.log(`[${new Date().toISOString()}] Server ${id} settings updated successfully.`); // Log success
         res.status(200).send('Settings updated successfully.');
