@@ -81,6 +81,7 @@ RAW_TOTAL_NET_DOWN=$(cat /sys/class/net/$NET_INTERFACE/statistics/rx_bytes || ec
 RAW_TOTAL_NET_UP=$(cat /sys/class/net/$NET_INTERFACE/statistics/tx_bytes || echo 0)
 
 # --- 组装JSON数据 ---
+# 注意: JSON中不能使用#作为注释，已移除
 JSON_PAYLOAD=$(cat <<EOF
 {
   "id": "$SERVER_ID",
@@ -90,9 +91,9 @@ JSON_PAYLOAD=$(cat <<EOF
   "cpu": $CPU_USAGE,
   "cpuModel": "$CPU_MODEL",
   "mem": { "total": $MEM_TOTAL, "used": $MEM_USED },
-  "memModel": "$MEM_MODEL", # 新增内存型号
+  "memModel": "$MEM_MODEL",
   "disk": { "total": $DISK_TOTAL, "used": $DISK_USED },
-  "diskModel": "$DISK_MODEL", # 新增硬盘型号
+  "diskModel": "$DISK_MODEL",
   "net": { "up": $NET_UP_BPS, "down": $NET_DOWN_BPS },
   "rawTotalNet": { "up": $RAW_TOTAL_NET_UP, "down": $RAW_TOTAL_NET_DOWN }
 }
