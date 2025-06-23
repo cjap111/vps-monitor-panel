@@ -792,7 +792,7 @@
 
 
                 // Safely access server.cpu properties
-                const cpuUsage = (server.cpu !== undefined && server.cpu !== null) ? server.cpu.toFixed(1) : 0;
+                const cpuUsage = (server.cpu !== undefined && server.cpu !== null && typeof server.cpu === 'number') ? server.cpu.toFixed(1) : 0;
                 const detailCpuUsageElement = document.getElementById('detailCpuUsage');
                 const detailCpuBarElement = document.getElementById('detailCpuBar');
                 if (detailCpuUsageElement) detailCpuUsageElement.textContent = `${cpuUsage}%`;
@@ -864,7 +864,7 @@
                             detailExpirationInfo.classList.remove('text-green-400', 'text-red-400');
                             expirationInfo.classList.add('text-orange-400');
                         } else {
-                            detailExpirationInfo.textContent = `已过期 ${Math.abs(diffDays)} 天`;
+                            detailExpirationInfo.textContent = `到期日期: 已过期 ${Math.abs(diffDays)} 天`;
                             detailExpirationInfo.classList.remove('text-orange-400', 'text-green-400');
                             expirationInfo.classList.add('text-red-400');
                         }
