@@ -105,7 +105,8 @@ server {
     }
     
     location / {
-        try_files \$uri \$uri/ =404;
+        # 修正：将所有未找到的文件和目录的请求重定向到 index.html，以支持前端路由
+        try_files \$uri \$uri/ /index.html; 
     }
 }
 EOF
