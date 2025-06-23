@@ -9,7 +9,7 @@
 # --- 颜色定义 ---
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-YELLOW='\033[1;33m'\
+YELLOW='\033[1;33m' # 修正：移除了多余的反斜杠
 NC='\033[0m' # No Color
 
 # --- 脚本欢迎信息 ---
@@ -506,8 +506,8 @@ uninstall_agent() {
 echo "请选择要执行的操作: (再次运行本脚本即可安装或更新)"
 echo "1) 安装/更新服务端 (Frontend + Backend)"
 echo "2) 安装/更新被控端 (Agent)"
-echo "3) 卸载服务端"
-echo "4) 卸载被控端"
+echo -e "${YELLOW}3) 卸载服务端${NC}"
+echo -e "${YELLOW}4) 卸载被控端${NC}"
 read -p "请输入选项 [1-4]: " choice
 
 case $choice in
