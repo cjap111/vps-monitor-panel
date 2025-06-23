@@ -24,6 +24,13 @@ MEM_INFO=$(free -m | grep Mem)
 MEM_TOTAL=$(echo $MEM_INFO | awk '{print $2}' || echo 0)
 MEM_USED=$(echo $MEM_INFO | awk '{print $3}' || echo 0)
 
+# 获取内存型号
+# 尝试使用 dmidecode 获取内存制造商和部件号作为型号，需要root权限且可能系统未安装此工具
+# 如果没有 dmidecode 或没有足够权限，则显示 "Unknown Memory Model"
+# 仅获取第一个内存模块的信息以简化处理
+MEM_MODEL=$(sudo dmidecode -t 17 2>/dev/null | awk '/Size:/{s=$2" "$3}/Manufacturer:/{m=$2}/Part Number:/{p=$3; printf "%s %s %s\n", m, p, s; exit}' || echo "Unknown Memory Model")
+MEM_MODEL=${MEM_MODEL:-"Unknown Memory Model"} # 确保变量不为空
+
 # 获取磁盘信息 (单位：兆字节 MB)
 # 使用 -BM 参数获取M单位的磁盘大小，更稳定
 DISK_INFO=$(df -BM / | tail -n 1)
@@ -31,6 +38,28 @@ DISK_INFO=$(df -BM / | tail -n 1)
 DISK_TOTAL=$(echo $DISK_INFO | awk '{print $2}' | sed 's/M//' || echo 0)
 # 从df输出中提取已用空间，并去除'M'单位
 DISK_USED=$(echo $DISK_INFO | awk '{print $3}' | sed 's/M//' || echo 0)
+
+# 获取硬盘型号
+# 1. 确定根分区对应的块设备
+ROOT_PARTITION=$(df -P / | tail -n 1 | awk '{print $1}')
+# 2. 从分区路径中提取基础设备名 (例如 /dev/sda 从 /dev/sda1, 或 /dev/nvme0n1 从 /dev/nvme0n1p1)
+# 针对常见的 /dev/sdXN 和 /dev/nvmeXnYpN 格式
+if echo "$ROOT_PARTITION" | grep -q "nvme"; then
+    ROOT_DEV_BASE=$(echo "$ROOT_PARTITION" | sed -E 's/p[0-9]+$//') # 移除 NVMe 分区号
+elif echo "$ROOT_PARTITION" | grep -q "/dev/sd"; then
+    ROOT_DEV_BASE=$(echo "$ROOT_PARTITION" | sed -E 's/[0-9]+$//') # 移除 /dev/sdX 分区号
+else
+    ROOT_DEV_BASE="$ROOT_PARTITION" # 其他情况直接使用
+fi
+
+# 3. 使用 lsblk 获取该设备的型号
+# 确保 ROOT_DEV_BASE 是一个有效的设备路径 (例如 /dev/sda)
+if [ -b "$ROOT_DEV_BASE" ]; then # 检查是否是块设备
+    DISK_MODEL=$(lsblk -no MODEL "$ROOT_DEV_BASE" 2>/dev/null | head -n 1 | xargs || echo "Unknown Disk Model")
+else
+    DISK_MODEL="Unknown Disk Model"
+fi
+DISK_MODEL=${DISK_MODEL:-"Unknown Disk Model"} # 确保变量不为空
 
 # 获取瞬时网络速度 (单位：字节/秒 B/s)
 # sar -n DEV 1 1: 报告网络设备的统计信息，每1秒采集1次
@@ -61,7 +90,9 @@ JSON_PAYLOAD=$(cat <<EOF
   "cpu": $CPU_USAGE,
   "cpuModel": "$CPU_MODEL",
   "mem": { "total": $MEM_TOTAL, "used": $MEM_USED },
+  "memModel": "$MEM_MODEL", # 新增内存型号
   "disk": { "total": $DISK_TOTAL, "used": $DISK_USED },
+  "diskModel": "$DISK_MODEL", # 新增硬盘型号
   "net": { "up": $NET_UP_BPS, "down": $NET_DOWN_BPS },
   "rawTotalNet": { "up": $RAW_TOTAL_NET_UP, "down": $RAW_TOTAL_NET_DOWN }
 }
