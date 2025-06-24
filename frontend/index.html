@@ -27,7 +27,6 @@
         .icon-btn:hover { background: rgba(255,255,255,0.2); }
 
         /* Custom styles to prevent server name overflow */
-        /* Make the name container take available space and allow truncation */
         .card .server-name-container {
             flex-grow: 1; /* Allows it to take available space */
             min-width: 0; /* Prevents overflow issues in flex container */
@@ -40,7 +39,6 @@
         }
 
         /* Styles for the detail modal to control height */
-        /* Make the modal content itself a flex container and set its max-height */
         #serverDetailModal > div { /* Target the inner modal content div */
             max-height: 90vh; /* Set a maximum height for the modal itself */
             display: flex;
@@ -64,6 +62,17 @@
         .chart-container canvas {
             max-width: 100%;
             height: 100%; /* Important for canvas to respect container height */
+        }
+        /* Custom spacing for data lines */
+        .data-line {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .data-line .label {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem; /* Space between icon and text */
         }
     </style>
 </head>
@@ -145,21 +154,21 @@
                 <div class="text-xs text-gray-500 flex items-center space-x-2"><i data-lucide="clock" class="w-4 h-4"></i><span data-id="uptime">在线 0 天</span></div>
             </div>
             <div class="pt-3 mt-3 border-t border-gray-700/50 text-xs text-gray-400 space-y-1">
-                <div class="flex justify-between items-center">
-                    <span class="flex items-center space-x-2 font-medium"><i data-lucide="bar-chart-3" class="w-4 h-4"></i><span>总流量</span></span>
+                <div class="data-line">
+                    <span class="label font-medium"><i data-lucide="bar-chart-3" class="w-4 h-4"></i><span>总流量</span></span>
                     <span class="text-gray-500" data-id="reset-info">每月1日重置</span>
                 </div>
-                <div class="flex justify-between items-center pl-1">
-                    <span class="flex items-center space-x-1.5 text-red-400"><i data-lucide="arrow-up" class="w-3 h-3"></i><span data-id="total-net-up" class="font-mono">0 GB</span></span>
-                    <span class="flex items-center space-x-1.5 text-cyan-400"><i data-lucide="arrow-down" class="w-3 h-3"></i><span data-id="total-net-down" class="font-mono">0 GB</span></span>
+                <div class="data-line pl-1">
+                    <span class="label text-red-400"><i data-lucide="arrow-up" class="w-3 h-3"></i><span data-id="total-net-up" class="font-mono">0 GB</span></span>
+                    <span class="label text-cyan-400"><i data-lucide="arrow-down" class="w-3 h-3"></i><span data-id="total-net-down" class="font-mono">0 GB</span></span>
                 </div>
                 <!-- Remaining traffic display -->
-                <div class="flex justify-between items-center pl-1 pt-1">
-                    <span class="flex items-center space-x-1.5 text-gray-300"><i data-lucide="data" class="w-3 h-3"></i><span data-id="remaining-traffic" class="font-mono">剩余 0 GB</span></span>
+                <div class="data-line pl-1 pt-1">
+                    <span class="label text-gray-300"><i data-lucide="data" class="w-3 h-3"></i><span data-id="remaining-traffic" class="font-mono">剩余 0 GB</span></span>
                 </div>
                  <!-- Expiration date display -->
-                <div class="flex justify-between items-center pl-1 pt-1">
-                    <span class="flex items-center space-x-1.5 text-orange-300"><i data-lucide="calendar" class="w-3 h-3"></i><span data-id="expiration-info" class="font-mono"></span></span>
+                <div class="data-line pl-1 pt-1">
+                    <span class="label text-orange-300"><i data-lucide="calendar" class="w-3 h-3"></i><span data-id="expiration-info" class="font-mono"></span></span>
                 </div>
             </div>
         </div>
@@ -206,7 +215,7 @@
                     </div>
                     <!-- New: Total Traffic Limit Input -->
                     <div>
-                        <label for="settingTotalTrafficLimit" class="block text-sm font-medium text-gray-300 mb-2">总流量限制 (GB)</label>
+                        <label for="settingTotalTrafficLimit" class="block text-sm font-medium text-gray-300 mb-2">总流量限制 (GB) (0 表示无限制)</label>
                         <input type="number" step="0.01" id="settingTotalTrafficLimit" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:ring-indigo-500 focus:border-indigo-500" required>
                     </div>
                     <!-- New: Traffic Calculation Mode Selection -->
@@ -549,19 +558,27 @@
 
                 // Calculate and update Remaining Traffic
                 const totalTrafficLimitGB = (server.totalTrafficLimit !== undefined && typeof server.totalTrafficLimit === 'number') ? server.totalTrafficLimit : 0;
-                const usedTrafficBytes = calculateUsedTraffic(server);
-                const usedTrafficGB = (usedTrafficBytes / GB_IN_BYTES).toFixed(2);
-                const remainingTrafficGB = (totalTrafficLimitGB - usedTrafficGB).toFixed(2);
-
                 const remainingTrafficElement = cardElement.querySelector('[data-id="remaining-traffic"]');
+
                 if (remainingTrafficElement) {
-                    remainingTrafficElement.textContent = `剩余 ${remainingTrafficGB} GB`;
-                    if (remainingTrafficGB < 0) {
-                        remainingTrafficElement.classList.remove('text-gray-300');
-                        remainingTrafficElement.classList.add('text-red-400');
-                    } else {
-                        remainingTrafficElement.classList.remove('text-red-400');
+                    if (totalTrafficLimitGB === 0) {
+                        // If totalTrafficLimit is 0, display infinity symbol and do not calculate remaining traffic
+                        remainingTrafficElement.textContent = `剩余 ∞ GB`;
+                        remainingTrafficElement.classList.remove('text-red-400'); // Ensure no red color
                         remainingTrafficElement.classList.add('text-gray-300');
+                    } else {
+                        const usedTrafficBytes = calculateUsedTraffic(server);
+                        const usedTrafficGB = (usedTrafficBytes / GB_IN_BYTES);
+                        const remainingTrafficGB = (totalTrafficLimitGB - usedTrafficGB).toFixed(2);
+
+                        remainingTrafficElement.textContent = `剩余 ${remainingTrafficGB} GB`;
+                        if (remainingTrafficGB < 0) {
+                            remainingTrafficElement.classList.remove('text-gray-300');
+                            remainingTrafficElement.classList.add('text-red-400');
+                        } else {
+                            remainingTrafficElement.classList.remove('text-red-400');
+                            remainingTrafficElement.classList.add('text-gray-300');
+                        }
                     }
                 }
 
@@ -917,19 +934,26 @@
 
                 // Calculate and update Remaining Traffic for detail modal
                 const detailTotalTrafficLimitGB = (server.totalTrafficLimit !== undefined && typeof server.totalTrafficLimit === 'number') ? server.totalTrafficLimit : 0;
-                const detailUsedTrafficBytes = calculateUsedTraffic(server);
-                const detailUsedTrafficGB = (detailUsedTrafficBytes / GB_IN_BYTES).toFixed(2);
-                const detailRemainingTrafficGB = (detailTotalTrafficLimitGB - detailUsedTrafficGB).toFixed(2);
-
                 const detailRemainingTrafficElement = document.getElementById('detailRemainingTraffic');
+
                 if (detailRemainingTrafficElement) {
-                    detailRemainingTrafficElement.textContent = `剩余 ${detailRemainingTrafficGB} GB`;
-                    if (detailRemainingTrafficGB < 0) {
-                        detailRemainingTrafficElement.classList.remove('text-gray-400');
-                        detailRemainingTrafficElement.classList.add('text-red-400');
-                    } else {
+                    if (detailTotalTrafficLimitGB === 0) {
+                        detailRemainingTrafficElement.textContent = `剩余 ∞ GB`;
                         detailRemainingTrafficElement.classList.remove('text-red-400');
                         detailRemainingTrafficElement.classList.add('text-gray-400');
+                    } else {
+                        const detailUsedTrafficBytes = calculateUsedTraffic(server);
+                        const detailUsedTrafficGB = (detailUsedTrafficBytes / GB_IN_BYTES);
+                        const detailRemainingTrafficGB = (detailTotalTrafficLimitGB - detailUsedTrafficGB).toFixed(2);
+
+                        detailRemainingTrafficElement.textContent = `剩余 ${detailRemainingTrafficGB} GB`;
+                        if (detailRemainingTrafficGB < 0) {
+                            detailRemainingTrafficElement.classList.remove('text-gray-400');
+                            detailRemainingTrafficElement.classList.add('text-red-400');
+                        } else {
+                            detailRemainingTrafficElement.classList.remove('text-red-400');
+                            detailRemainingTrafficElement.classList.add('text-gray-400');
+                        }
                     }
                 }
 
@@ -965,7 +989,7 @@
                     } else {
                         detailExpirationInfo.textContent = '到期日期: 未设置';
                         detailExpirationInfo.classList.remove('text-orange-400', 'text-red-400', 'text-green-400');
-                        detailExpirationInfo.classList.add('text-gray-400');
+                        expirationInfo.classList.add('text-gray-400');
                     }
                 }
             }
