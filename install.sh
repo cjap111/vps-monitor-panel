@@ -2,7 +2,7 @@
 
 # =================================================================
 #
-#          一键式服务器监控面板安装/卸载/更新脚本 v1.7 
+#          一键式服务器监控面板安装/卸载/更新脚本 v1.7 (定制版)
 #
 # =================================================================
 
@@ -431,7 +431,7 @@ uninstall_server() {
         exit 1
     fi
 
-    echo -e "${RED}警告：此操作将删除所有服务端相关文件和服务，并尝试卸载Nginx, Node.js, Certbot等依赖。${NC}"
+    echo -e "${RED}警告：此操作将删除所有服务端相关文件和服务，但会保留SSL证书。${NC}"
     read -p "您确定要继续吗? [y/N]: " CONFIRM
     if [[ "$CONFIRM" != "y" ]]; then
         echo "操作已取消。"
@@ -461,23 +461,14 @@ uninstall_server() {
     echo "--> 正在删除前端文件..."
     sudo rm -rf /var/www/monitor-frontend
 
-    # 6. 重载Systemd并重启Nginx (Nginx重启是为了清除可能还在内存中的旧配置)
-    echo "--> 正在重载Systemd服务..."
+    # 6. 重载Systemd并重启Nginx
+    echo "--> 正在重载服务并重启Nginx..."
     sudo systemctl daemon-reload
+    sudo systemctl restart nginx
     
-    # 7. 卸载依赖
-    echo "--> 正在卸载依赖 (Nginx, Node.js, Certbot, Python3-certbot-nginx)..."
-    sudo apt-get purge -y nginx nodejs npm certbot python3-certbot-nginx
-    sudo apt-get autoremove -y
-
-    # 8. 删除Certbot证书 (可选，但通常在卸载Nginx后会问)
-    # Certbot可能会保留证书，如果你想删除，可以取消下面这行的注释，但请谨慎操作
-    # echo "--> 正在尝试删除Certbot证书..."
-    # sudo certbot delete --cert-name "$DOMAIN"
-
     echo -e "${GREEN}=====================================================${NC}"
     echo -e "${GREEN}          服务端卸载成功! ✅${NC}"
-    echo -e "注意：SSL证书文件默认保留在系统中。如果需要彻底删除，请手动运行 'sudo certbot delete --cert-name $DOMAIN'。"
+    echo -e "SSL证书文件保留在系统中，您可以使用 'sudo certbot delete --cert-name $DOMAIN' 手动删除。"
     echo -e "${GREEN}=====================================================${NC}"
 }
 
@@ -515,7 +506,7 @@ uninstall_agent() {
 echo "请选择要执行的操作: (再次运行本脚本即可安装或更新)"
 echo "1) 安装/更新服务端 (Frontend + Backend)"
 echo "2) 安装/更新被控端 (Agent)"
-echo -e "${YELLOW}3) 卸载服务端 (将同时卸载Nginx, Node.js, Certbot等依赖)${NC}"
+echo -e "${YELLOW}3) 卸载服务端${NC}"
 echo -e "${YELLOW}4) 卸载被控端${NC}"
 read -p "请输入选项 [1-4]: " choice
 
