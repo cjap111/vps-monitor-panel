@@ -989,7 +989,8 @@
                     } else {
                         detailExpirationInfo.textContent = '到期日期: 未设置';
                         detailExpirationInfo.classList.remove('text-orange-400', 'text-red-400', 'text-green-400');
-                        expirationInfo.classList.add('text-gray-400');
+                        // BUG FIX: Changed 'expirationInfo' to 'detailExpirationInfo'
+                        detailExpirationInfo.classList.add('text-gray-400');
                     }
                 }
             }
