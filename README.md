@@ -31,7 +31,7 @@ The install.sh script provides a convenient way to set up both the monitoring se
 1. Server (Frontend + Backend) Installation
 Run this command on your monitoring server:
 
-curl -sL https://raw.githubusercontent.com/cjap111/vps-monitor-panel/main/install.sh | bash
+bash <(curl -sL https://raw.githubusercontent.com/cjap111/vps-monitor-panel/main/install.sh)
 
 Follow the prompts:
 
@@ -135,7 +135,7 @@ curl -sL https://raw.githubusercontent.com/cjap111/vps-monitor-panel/main/instal
 2. 被控端 (Agent) 安装
 在每台您希望监控的服务器上运行此命令：
 
-curl -sL https://raw.githubusercontent.com/cjap111/vps-monitor-panel/main/install.sh | bash
+bash <(curl -sL https://raw.githubusercontent.com/cjap111/vps-monitor-panel/main/install.sh)
 
 按照提示操作：
 
