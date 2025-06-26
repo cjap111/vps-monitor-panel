@@ -42,6 +42,10 @@ try {
             if (serverDataStore[id].trafficCalculationMode === undefined) {
                 serverDataStore[id].trafficCalculationMode = 'bidirectional'; // Default to bidirectional
             }
+            // Initialize systemUptime if missing
+            if (serverDataStore[id].systemUptime === undefined) {
+                serverDataStore[id].systemUptime = 0; // Default to 0 seconds
+            }
         });
         saveData(); // Save updated structure if any initialization happened
     }
@@ -99,7 +103,6 @@ app.post('/api/report', (req, res) => {
             totalNet: { up: 0, down: 0 }, // Initialize accumulated total traffic
             resetDay: 1, // Default reset day
             lastReset: `${new Date().getFullYear()}-${new Date().getMonth() + 1}`,
-            startTime: now,
             lastUpdated: now,
             online: true,
             expirationDate: null,
@@ -107,7 +110,8 @@ app.post('/api/report', (req, res) => {
             memModel: data.memModel || null,
             diskModel: data.diskModel || null,
             totalTrafficLimit: 0, // Initialize new field for total traffic limit
-            trafficCalculationMode: 'bidirectional' // Initialize new field for calculation mode
+            trafficCalculationMode: 'bidirectional', // Initialize new field for calculation mode
+            systemUptime: data.systemUptime || 0 // New field for system uptime in seconds
         };
         console.log(`[${new Date().toISOString()}] New server ${data.id} added.`);
     } else {
@@ -124,6 +128,9 @@ app.post('/api/report', (req, res) => {
         }
         if (existingData.trafficCalculationMode === undefined) {
             existingData.trafficCalculationMode = 'bidirectional';
+        }
+        if (existingData.systemUptime === undefined) {
+            existingData.systemUptime = 0;
         }
     }
 
@@ -183,6 +190,7 @@ app.post('/api/report', (req, res) => {
         rawTotalNet: { up: data.rawTotalNet.up, down: data.rawTotalNet.down }, // Crucial: Update rawTotalNet for the next comparison
         lastUpdated: now, // Always update lastUpdated timestamp
         online: true, // Mark as online
+        systemUptime: data.systemUptime, // Store the new system uptime
         // totalTrafficLimit and trafficCalculationMode are preserved from existingData or initialized above
     };
 
@@ -227,7 +235,7 @@ app.post('/api/servers/:id/settings', (req, res) => {
         serverDataStore[id].totalTrafficLimit = totalTrafficLimit;
         serverDataStore[id].trafficCalculationMode = trafficCalculationMode;
 
-        // Note: cpuModel, memModel, diskModel, rawTotalNet are not updated via settings route, they are only updated by agent reports.
+        // Note: cpuModel, memModel, diskModel, rawTotalNet, and systemUptime are not updated via settings route, they are only updated by agent reports.
         saveData(); // Save data
         console.log(`[${new Date().toISOString()}] Server ${id} settings updated successfully.`);
         res.status(200).send('Settings updated successfully.');
