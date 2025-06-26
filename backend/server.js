@@ -346,7 +346,8 @@ app.post('/api/servers/:id/settings', (req, res) => {
 
         // Determine if traffic was manually reset (totalNet changed) or if reset settings changed
         const trafficManuallyReset = (oldTotalNetUp !== totalNetUp || oldTotalNetDown !== totalNetDown);
-        const resetSettingsChanged = (oldResetDay !== resetDay || oldResetHour !== oldResetHour || Math.abs(oldResetMinute - resetMinute) > 1); // 1 minute tolerance for minute change
+        // FIX: Corrected typo from 'oldResetHour !== oldResetHour' to 'oldResetHour !== resetHour'
+        const resetSettingsChanged = (oldResetDay !== resetDay || oldResetHour !== resetHour || Math.abs(oldResetMinute - resetMinute) > 1); // 1 minute tolerance for minute change
 
         // If traffic was manually reset or reset settings changed, re-evaluate lastReset.
         // This ensures the 'lastReset' timestamp accurately reflects the point from which
