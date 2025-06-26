@@ -430,6 +430,23 @@
                 lucide.createIcons(); // Re-create icons if the modal content changes
             }
 
+            // Helper function to format uptime from seconds
+            function formatUptime(totalSeconds) {
+                if (totalSeconds < 0) return 'N/A';
+                const days = Math.floor(totalSeconds / (3600 * 24));
+                const hours = Math.floor((totalSeconds % (3600 * 24)) / 3600);
+                const minutes = Math.floor((totalSeconds % 3600) / 60);
+
+                let uptimeString = '';
+                if (days > 0) uptimeString += `${days} 天`;
+                if (hours > 0) uptimeString += `${uptimeString ? ' ' : ''}${hours} 小时`;
+                // Only show minutes if less than a day, or if it's the only unit to show
+                if (minutes > 0 && days === 0) uptimeString += `${uptimeString ? ' ' : ''}${minutes} 分钟`; 
+                else if (totalSeconds < 60) uptimeString = '< 1 分钟'; // If less than a minute
+
+                return uptimeString || '0 天'; // Fallback for very short uptimes
+            }
+
             // Enhanced formatBytes to dynamically choose unit (Bytes, KB, MB, GB, TB)
             const formatBytes = (bytes, decimals = 2) => {
                 if (bytes === 0) return '0 Bytes';
@@ -542,16 +559,13 @@
                 if (netUpElement) netUpElement.textContent = `${formattedNetUp.value} ${formattedNetUp.unit}`;
 
 
-                // Update Uptime
-                const startTime = server.startTime;
+                // Update Uptime using the new formatUptime function
                 const uptimeElement = cardElement.querySelector('[data-id="uptime"]');
                 if (uptimeElement) {
-                    if (startTime) {
-                        const uptimeMs = Date.now() - startTime;
-                        const uptimeDays = Math.floor(uptimeMs / (1000 * 60 * 60 * 24));
-                        uptimeElement.textContent = `在线 ${uptimeDays} 天`;
+                    if (typeof server.uptimeSeconds === 'number') {
+                        uptimeElement.textContent = `在线 ${formatUptime(server.uptimeSeconds)}`;
                     } else {
-                        uptimeElement.textContent = `在线 0 天`;
+                        uptimeElement.textContent = `在线 N/A`;
                     }
                 }
 
@@ -946,16 +960,16 @@
                     detailResetInfoElement.textContent = `每月${server.resetDay}日 ${hour}:${minute} 重置`;
                 }
 
+                // Update Uptime in detail modal
                 const detailUptimeElement = document.getElementById('detailUptime');
                 if (detailUptimeElement) {
-                    if (server.startTime) {
-                        const uptimeMs = Date.now() - server.startTime;
-                        const uptimeDays = Math.floor(uptimeMs / (1000 * 60 * 60 * 24));
-                        detailUptimeElement.textContent = `在线 ${uptimeDays} 天`;
+                    if (typeof server.uptimeSeconds === 'number') {
+                        detailUptimeElement.textContent = `在线 ${formatUptime(server.uptimeSeconds)}`;
                     } else {
-                        detailUptimeElement.textContent = `在线 0 天`;
+                        detailUptimeElement.textContent = `在线 N/A`;
                     }
                 }
+
 
                 // Calculate and update Remaining Traffic for detail modal
                 const detailTotalTrafficLimitGB = (server.totalTrafficLimit !== undefined && typeof server.totalTrafficLimit === 'number') ? server.totalTrafficLimit : 0;
