@@ -3,14 +3,15 @@
 # =================================================================
 #
 #          一键式服务器监控面板安装/卸载/更新脚本 v1.9
+#          修复了重新安装清除流量数据的问题和EOF错误
 #
 # =================================================================
 
 # --- 颜色定义 ---
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-YELLOW='\033[1;33m' # 修正：移除了多余的反斜杠
-NC='\\033[0m' # No Color - 修复了这里的反斜杠，使其能正确重置颜色
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
 
 # --- 脚本欢迎信息 ---
 echo -e "${GREEN}=====================================================${NC}"
@@ -32,447 +33,387 @@ install_server() {
 
     echo "--> 正在检查并安装/更新依赖 (Nginx, Node.js, Certbot)..."
     dpkg -s nginx >/dev/null 2>&1 || sudo apt-get install -y nginx
-    dpkg -s nodejs >/dev/null 2>&1 || sudo apt-get install -y nodejs npm
+    dpkg -s nodejs >/dev/null 2>&1 || sudo apt-get install -y nodejs
+    dpkg -s npm >/dev/null 2>&1 || sudo apt-get install -y npm
     dpkg -s certbot >/dev/null 2>&1 || sudo apt-get install -y certbot python3-certbot-nginx
 
+    # 检查Node.js版本，建议至少使用 Node.js 16
+    NODE_VERSION=$(node -v | cut -d 'v' -f 2 | cut -d '.' -f 1)
+    if (( NODE_VERSION < 16 )); then
+        echo -e "${YELLOW}警告: 检测到 Node.js 版本为 v${NODE_VERSION}。建议升级到 v16 或更高版本以获得最佳兼容性。${NC}"
+        echo -e "${YELLOW}您可以通过 NVM (Node Version Manager) 来管理 Node.js 版本。${NC}"
+    fi
+
+    # 2. 获取前端/后端代码
+    echo "--> 正在下载或更新前端和后端代码..."
+    TEMP_DIR="/tmp/monitor_panel_install"
+    REPO_URL="https://github.com/cjap111/vps-monitor-panel"
+
+    if [ -d "$TEMP_DIR" ]; then
+        echo "    - 临时目录已存在，尝试更新..."
+        sudo rm -rf "$TEMP_DIR" # 清理旧的临时目录
+    fi
+    mkdir -p "$TEMP_DIR"
+    git clone --depth 1 "$REPO_URL" "$TEMP_DIR"
     if [ $? -ne 0 ]; then
-        echo -e "${RED}错误：依赖安装失败。请查看上面的错误信息来诊断问题。${NC}"
+        echo -e "${RED}错误：无法克隆或更新代码仓库。请检查您的网络连接或 Git 安装。${NC}"
         exit 1
     fi
 
-    # Set server timezone to Asia/Shanghai
-    echo "--> 正在设置服务器时区为 Asia/Shanghai..."
-    sudo timedatectl set-timezone Asia/Shanghai
-    if [ $? -ne 0 ]; then
-        echo -e "${RED}错误：设置时区失败。请手动检查并设置，或确保 timedatectl 命令可用。${NC}"
-    else
-        echo -e "${GREEN}服务器时区已设置为 Asia/Shanghai。${NC}"
-    fi
+    # 3. 配置 Nginx
+    echo "--> 正在配置 Nginx..."
+    read -p "请输入您的域名 (例如: monitor.yourdomain.com): " DOMAIN_INPUT
+    FRONTEND_DIR="/var/www/monitor-frontend"
+    BACKEND_PORT="3000" # 后端默认端口
 
-    # 2. 获取用户输入 (如果是更新，尝试读取旧配置，否则提示输入)
-    local BACKEND_ENV_FILE="/opt/monitor-backend/.env"
-    local OLD_DOMAIN_FROM_ENV="" 
-    local CURRENT_DEL_PASSWORD=""
-    local CURRENT_AGENT_PASSWORD=""
-    local OLD_EMAIL=""
-    local ENV_FILE_EXISTS=false
+    # 创建前端目录
+    sudo mkdir -p "$FRONTEND_DIR"
 
-    # 尝试从后端服务的 .env 文件中读取旧配置，并抑制grep的错误输出
-    if [ -f "$BACKEND_ENV_FILE" ]; then
-        OLD_DOMAIN_FROM_ENV=$(grep "^DOMAIN=" "$BACKEND_ENV_FILE" 2>/dev/null | cut -d= -f2)
-        CURRENT_DEL_PASSWORD=$(grep "^DELETE_PASSWORD=" "$BACKEND_ENV_FILE" 2>/dev/null | cut -d= -f2)
-        CURRENT_AGENT_PASSWORD=$(grep "^AGENT_INSTALL_PASSWORD=" "$BACKEND_ENV_FILE" 2>/dev/null | cut -d= -f2)
-        OLD_EMAIL=$(grep "^CERTBOT_EMAIL=" "$BACKEND_ENV_FILE" 2>/dev/null | cut -d= -f2)
-        ENV_FILE_EXISTS=true
-    fi
+    # Nginx 配置文件路径
+    NGINX_CONF="/etc/nginx/sites-available/$DOMAIN_INPUT"
+    NGINX_LINK="/etc/nginx/sites-enabled/$DOMAIN_INPUT"
 
-    local DOMAIN_VALIDATED=false
-    while [ "$DOMAIN_VALIDATED" == "false" ]; do
-        local USER_INPUT_DOMAIN=""
-
-        if [ -n "$OLD_DOMAIN_FROM_ENV" ] && \
-           ! [[ "$OLD_DOMAIN_FROM_ENV" == "server_name" ]] && \
-           [[ "$OLD_DOMAIN_FROM_ENV" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
-            read -p "检测到旧域名: ${OLD_DOMAIN_FROM_ENV}。是否继续使用此域名? (y/N): " USE_OLD_DOMAIN_PROMPT
-            if [[ "$USE_OLD_DOMAIN_PROMPT" == "y" || "$USE_OLD_DOMAIN_PROMPT" == "Y" ]]; then
-                DOMAIN="$OLD_DOMAIN_FROM_ENV"
-                echo "继续使用域名: $DOMAIN"
-                DOMAIN_VALIDATED=true
-                break
-            else
-                read -p "请输入新的域名 (例如: monitor.yourdomain.com): " USER_INPUT_DOMAIN
-            fi
-        else
-            read -p "请输入您解析到本服务器的域名 (例如: monitor.yourdomain.com): " USER_INPUT_DOMAIN
-        fi
-
-        DOMAIN="$USER_INPUT_DOMAIN"
-
-        if [ -z "$DOMAIN" ]; then
-            echo -e "${RED}错误：域名不能为空！请重新输入。${NC}"
-        elif [[ "$DOMAIN" == *" "* ]]; then
-            echo -e "${RED}错误：域名不能包含空格！请重新输入。${NC}"
-        elif [[ "$DOMAIN" == "server_name" ]]; then
-            echo -e "${RED}错误：域名不能是 'server_name'。请输入您的实际域名。${NC}"
-        elif ! [[ "$DOMAIN" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
-            echo -e "${RED}错误：域名格式不正确。请确保只使用字母、数字、点和破折号，并包含有效顶级域名（如 .com, .net）。${NC}"
-        else
-            DOMAIN_VALIDATED=true
-        fi
-    done
-
-    # 密码输入部分
-    echo ""
-    if [ "$ENV_FILE_EXISTS" = false ] || ( [ -z "$CURRENT_DEL_PASSWORD" ] && [ -z "$CURRENT_AGENT_PASSWORD" ] ); then
-        echo -e "${YELLOW}由于是首次安装或未检测到旧密码，请务必设置以下密码！${NC}"
-        read -s -p "请为【网页端删除功能】设置一个强密码: " DEL_PASSWORD_INPUT
-        echo ""
-        read -s -p "请为【被控端安装功能】设置一个强密码: " AGENT_PASSWORD_INPUT
-        echo ""
-        DEL_PASSWORD="$DEL_PASSWORD_INPUT"
-        AGENT_PASSWORD="$AGENT_PASSWORD_INPUT"
-    else
-        echo -e "${YELLOW}检测到现有密码。如果需要修改，请输入新密码；留空表示不修改（保持旧密码）。${NC}"
-        read -s -p "请为【网页端删除功能】设置一个强密码 (当前: ${CURRENT_DEL_PASSWORD:+已设置}): " DEL_PASSWORD_INPUT
-        echo ""
-        read -s -p "请为【被控端安装功能】设置一个强密码 (当前: ${CURRENT_AGENT_PASSWORD:+已设置}): " AGENT_PASSWORD_INPUT
-        echo ""
-        DEL_PASSWORD="${DEL_PASSWORD_INPUT:-$CURRENT_DEL_PASSWORD}"
-        AGENT_PASSWORD="${AGENT_PASSWORD_INPUT:-$CURRENT_AGENT_PASSWORD}"
-    fi
-
-    if [ -z "$DEL_PASSWORD" ] || [ -z "$AGENT_PASSWORD" ]; then
-        echo -e "${RED}错误：密码不能为空！首次安装或修改密码时，请务必设置！${NC}"
-        exit 1
-    fi
-    
-    # 3. 部署前端 (强制更新) - Deploy frontend first as it's needed for Certbot's webroot challenge
-    echo "--> 正在部署/更新前端面板..."
-    sudo mkdir -p /var/www/monitor-frontend
-    sudo curl -s -L "https://raw.githubusercontent.com/cjap111/vps-monitor-panel/main/frontend/index.html" -o /var/www/monitor-frontend/index.html
-    # 替换前端HTML中的API_ENDPOINT，使其指向当前域名
-    sudo sed -i "s|https://monitor.yourdomain.com/api|https://$DOMAIN/api|g" /var/www/monitor-frontend/index.html
-
-    # Ensure /var/www/certbot exists for Certbot webroot challenge
-    sudo mkdir -p /var/www/certbot
-    sudo chown -R www-data:www-data /var/www/certbot # Ensure Nginx user can write
-
-    # 4. Configure Nginx for Certbot HTTP challenge
-    echo "--> 正在配置Nginx HTTP服务用于Certbot验证..."
-    NGINX_CONF="/etc/nginx/sites-available/$DOMAIN"
-    sudo tee "$NGINX_CONF" > /dev/null <<EOF
+    # 生成 Nginx 配置文件内容
+    # 注意：这里使用了一个 heredoc，EOF 必须独占一行且没有空格
+    sudo bash -c "cat > $NGINX_CONF << 'EOF'
 server {
     listen 80;
-    server_name $DOMAIN;
-
-    # Certbot's well-known location for HTTP-01 challenge
-    location /.well-known/acme-challenge/ {
-        root /var/www/certbot;
-    }
-
-    # Redirect all other HTTP traffic to HTTPS later
-    location / {
-        return 301 https://\$host\$request_uri;
-    }
-}
-EOF
-    # Remove old domain's Nginx symlink if domain changed
-    if [ -n "$OLD_DOMAIN_FROM_ENV" ] && [ "$OLD_DOMAIN_FROM_ENV" != "$DOMAIN" ] && [ -f "/etc/nginx/sites-enabled/$OLD_DOMAIN_FROM_ENV" ]; then
-        echo "--> 检测到域名更改，正在移除旧Nginx符号链接..."
-        sudo rm -f "/etc/nginx/sites-enabled/$OLD_DOMAIN_FROM_ENV"
-    fi
-    sudo ln -s -f "$NGINX_CONF" /etc/nginx/sites-enabled/
-    echo "--> 测试Nginx配置 (HTTP Only)..."
-    sudo nginx -t
-    if [ $? -ne 0 ]; then
-        echo -e "${RED}错误：Nginx HTTP配置测试失败。请检查您的Nginx配置。${NC}"
-        exit 1
-    fi
-    sudo systemctl restart nginx # Restart Nginx to pick up HTTP config for Certbot
-
-    # 5. Get SSL certificate (if not existing and valid)
-    echo "--> 正在为 $DOMAIN 获取或续订SSL证书..."
-
-    local EMAIL_TO_USE=""
-    # First, determine the email to use for Certbot
-    if [ -n "$OLD_EMAIL" ]; then
-        read -p "检测到旧邮箱地址: ${OLD_EMAIL}。是否继续使用此邮箱? (y/N): " USE_OLD_EMAIL_PROMPT
-        if [[ "$USE_OLD_EMAIL_PROMPT" == "y" || "$USE_OLD_EMAIL_PROMPT" == "Y" ]]; then
-            EMAIL_TO_USE="$OLD_EMAIL"
-            echo "继续使用邮箱: $EMAIL_TO_USE"
-        else
-            read -p "请输入您的邮箱地址 (用于Let's Encrypt证书续订提醒): " EMAIL_TO_USE_INPUT
-            EMAIL_TO_USE="$EMAIL_TO_USE_INPUT"
-        fi
-    else
-        read -p "请输入您的邮箱地址 (用于Let's Encrypt证书续订提醒): " EMAIL_TO_USE
-    fi
-
-    if [ -z "$EMAIL_TO_USE" ]; then
-        echo -e "${RED}错误：邮箱地址不能为空！申请SSL证书需要提供邮箱。${NC}"
-        exit 1 # Email is mandatory for new certificate application
-    fi
-    EMAIL="$EMAIL_TO_USE" # Set global EMAIL for the script to use
-
-    # Attempt account registration.
-    echo "--> 尝试注册Certbot账户 (如果尚未注册)..."
-    # Capture output and exit code of certbot register command
-    REGISTER_OUTPUT=$(sudo certbot register --email "$EMAIL" --agree-tos --non-interactive --no-eff-email 2>&1)
-    REGISTER_STATUS=$?
-
-    if [ $REGISTER_STATUS -eq 0 ]; then
-        echo -e "${GREEN}Certbot账户注册/更新成功！${NC}"
-    elif echo "$REGISTER_OUTPUT" | grep -q "There is an existing account"; then
-        # Handle the case where the account already exists, which is not an error for our purpose.
-        echo -e "${GREEN}Certbot账户已存在，继续。${NC}"
-    else
-        echo -e "${RED}错误：Certbot账户注册失败。${NC}"
-        echo -e "${RED}详细错误信息：${REGISTER_OUTPUT}${NC}"
-        echo -e "如果问题持续存在，请访问Let's Encrypt社区获取帮助。"
-        exit 1
-    fi
-
-    # Now, attempt to obtain or renew the certificate, or skip if valid one already exists
-    # Check if certificate already exists and is VALID for the domain
-    if sudo certbot certificates -d "$DOMAIN" | grep -q "VALID"; then
-        echo -e "${GREEN}检测到现有有效的SSL证书已绑定到 ${DOMAIN}，跳过新证书申请。Certbot会自动处理续订。${NC}"
-    else
-        echo "--> 运行Certbot获取证书..."
-        if ! sudo certbot --nginx --agree-tos --non-interactive -m "$EMAIL" -d "$DOMAIN"; then
-            echo -e "${RED}错误：Certbot未能成功获取或更新SSL证书。请检查您的域名解析（A/AAAA记录）和网络连接。${NC}"
-            echo -e "您可以在手动运行 'sudo certbot --nginx -d $DOMAIN' 来尝试诊断问题。"
-            exit 1
-        fi
-        echo -e "${GREEN}Certbot证书获取/更新成功！${NC}"
-    fi
-
-    # 6. Now, configure Nginx for full HTTPS with the obtained certificates
-    echo "--> 正在配置Nginx HTTPS服务..."
-    sudo tee "$NGINX_CONF" > /dev/null <<EOF
-server {
-    listen 80;
-    server_name $DOMAIN;
-    return 301 https://\$host\$request_uri; # Force HTTP to HTTPS redirection
-}
-
-server {
-    listen 443 ssl http2; # Enable HTTP/2
-    server_name $DOMAIN;
-
-    ssl_certificate /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
-
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
-    ssl_prefer_server_ciphers on;
-    ssl_session_cache shared:SSL:10m;
-    ssl_session_timeout 10m;
-    ssl_stapling on;
-    ssl_stapling_verify on;
-    resolver 8.8.8.8 8.8.4.4 valid=300s;
-    resolver_timeout 5s;
-
-    root /var/www/monitor-frontend; # Frontend files root directory
-    index index.html; # Default index file
-
-    location /api {
-        proxy_pass http://127.0.0.1:3000; # Proxy /api requests to Node.js backend
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host \$host;
-        proxy_cache_bypass \$http_upgrade;
-        proxy_connect_timeout 600;
-        proxy_send_timeout 600;
-        proxy_read_timeout 600;
-    }
+    server_name $DOMAIN_INPUT;
 
     location / {
+        root $FRONTEND_DIR;
+        index index.html;
         try_files \$uri \$uri/ /index.html;
     }
+
+    location /api {
+        proxy_pass http://127.0.0.1:$BACKEND_PORT;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    # 增加 WebSocket 支持 (如果后端需要)
+    location /ws {
+        proxy_pass http://127.0.0.1:$BACKEND_PORT;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+    }
 }
-EOF
-    echo "--> 测试Nginx配置 (HTTPS Enabled)..."
-    sudo nginx -t
+EOF"
+    
+    # 启用 Nginx 配置
+    sudo ln -sf "$NGINX_CONF" "$NGINX_LINK"
+    sudo nginx -t && sudo systemctl reload nginx
     if [ $? -ne 0 ]; then
-        echo -e "${RED}错误：Nginx HTTPS配置测试失败。请检查配置。${NC}"
+        echo -e "${RED}错误：Nginx 配置测试失败或重载失败。请检查 Nginx 配置。${NC}"
         exit 1
     fi
-    sudo systemctl restart nginx # Final restart to pick up HTTPS config
+    echo "    - Nginx 配置完成。"
+
+    # 4. 配置 SSL (Certbot)
+    echo "--> 正在配置 SSL 证书 (Certbot)..."
+    read -p "是否为您的域名配置SSL证书？(y/N): " INSTALL_SSL
+    if [[ "$INSTALL_SSL" == "y" || "$INSTALL_SSL" == "Y" ]]; then
+        sudo certbot --nginx --non-interactive --agree-tos --email admin@$DOMAIN_INPUT -d $DOMAIN_INPUT
+        if [ $? -ne 0 ]; then
+            echo -e "${YELLOW}警告：Certbot 证书配置失败。您可能需要手动配置。${NC}"
+        else
+            echo "    - SSL 证书配置成功。"
+        fi
+    else
+        echo "    - 跳过 SSL 证书配置。"
+    fi
+
+    # 5. 部署前端
+    echo "--> 正在部署前端..."
+    sudo rm -rf "$FRONTEND_DIR/*" # 清理旧的前端文件
+    sudo cp -r "$TEMP_DIR/frontend/"* "$FRONTEND_DIR"
+    echo "    - 前端部署完成。"
+
+    # 更新前端 API_ENDPOINT
+    sudo sed -i "s|const API_ENDPOINT = '.*'|const API_ENDPOINT = 'https://$DOMAIN_INPUT/api'|g" "$FRONTEND_DIR/index.html"
+    echo "    - 前端 API_ENDPOINT 更新为 https://$DOMAIN_INPUT/api"
+
+    # 6. 部署后端
+    echo "--> 正在部署后端..."
+    BACKEND_DIR="/opt/monitor-backend"
+    sudo mkdir -p "$BACKEND_DIR"
+
+    # *** 关键修改：避免删除 server_data.json ***
+    # 仅删除后端代码文件，保留数据文件 server_data.json
+    sudo find "$BACKEND_DIR/" -maxdepth 1 -mindepth 1 ! -name 'server_data.json' -exec rm -rf {} +
+
+    sudo cp -r "$TEMP_DIR/backend/"* "$BACKEND_DIR"
+    # 如果 backend 目录没有 server.js 和 package.json，则单独复制
+    sudo cp "$TEMP_DIR/server.js" "$BACKEND_DIR/server.js"
+    sudo cp "$TEMP_DIR/package.json" "$BACKEND_DIR/package.json"
     
-    # 7. Deploy Backend (forced update)
-    echo "--> 正在部署/更新后端API服务..."
-    sudo mkdir -p /opt/monitor-backend
-    cd /opt/monitor-backend
-    sudo curl -s -L "https://raw.githubusercontent.com/cjap111/vps-monitor-panel/main/backend/server.js" -o server.js
-    sudo curl -s -L "https://raw.githubusercontent.com/cjap111/vps-monitor-panel/main/backend/package.json" -o package.json
-    echo "--> 正在安装/更新后端依赖..."
-    sudo npm install
+    echo "    - 后端文件复制完成。"
 
-    # IMPORTANT NOTE: The 'server_data.json' file, which stores accumulated traffic data,
-    # is NOT deleted during a normal 'install_server' (update) operation.
-    # It will persist across updates. However, running 'uninstall_server' WILL delete it.
-    # If you wish to manually backup your data, copy /opt/monitor-backend/server_data.json before uninstallation.
+    echo "--> 正在安装后端依赖..."
+    (cd "$BACKEND_DIR" && sudo npm install)
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}错误：后端依赖安装失败。请检查 npm 或网络连接。${NC}"
+        exit 1
+    fi
+    echo "    - 后端依赖安装完成。"
 
-    # 8. Create or update environment file
-    echo "--> 正在配置/更新后端环境变量..."
-    sudo tee "$BACKEND_ENV_FILE" > /dev/null <<EOF
-DELETE_PASSWORD=$DEL_PASSWORD
-AGENT_INSTALL_PASSWORD=$AGENT_PASSWORD
-DOMAIN=$DOMAIN # Explicitly save domain to .env file
-${EMAIL:+CERTBOT_EMAIL=$EMAIL} # If email is set, save to .env
-EOF
+    # 7. 配置后端环境变量
+    echo "--> 正在配置后端环境变量..."
+    read -p "请输入删除服务器的密码 (DELETE_PASSWORD): " DELETE_PASSWORD_INPUT
+    read -p "请输入Agent安装密码 (AGENT_INSTALL_PASSWORD): " AGENT_INSTALL_PASSWORD_INPUT
 
-    # 9. Create or update Systemd service
-    echo "--> 正在创建/更新后台运行服务..."
-    sudo tee /etc/systemd/system/monitor-backend.service > /dev/null <<EOF
+    # 注意：这里使用了一个 heredoc，EOF 必须独占一行且没有空格
+    sudo bash -c "cat > $BACKEND_DIR/.env << 'EOF'
+DELETE_PASSWORD=$DELETE_PASSWORD_INPUT
+AGENT_INSTALL_PASSWORD=$AGENT_INSTALL_PASSWORD_INPUT
+EOF"
+    echo "    - 后端环境变量配置完成。"
+
+    # 8. 创建和启动后端服务 (systemd)
+    echo "--> 正在创建 systemd 服务并启动后端..."
+    # 注意：这里使用了一个 heredoc，EOF 必须独占一行且没有空格
+    sudo bash -c "cat > /etc/systemd/system/monitor-backend.service << 'EOF'
 [Unit]
-Description=Monitor Backend Server
+Description=Monitor Backend Service
 After=network.target
 
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/opt/monitor-backend
-EnvironmentFile=/opt/monitor-backend/.env
+WorkingDirectory=$BACKEND_DIR
 ExecStart=/usr/bin/node server.js
 Restart=always
+RestartSec=10
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=monitor-backend
 
 [Install]
 WantedBy=multi-user.target
-EOF
+EOF"
+    
     sudo systemctl daemon-reload
-    sudo systemctl enable monitor-backend > /dev/null 2>&1
+    sudo systemctl enable monitor-backend
     sudo systemctl restart monitor-backend
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}错误：后端服务启动失败。请检查日志 ('sudo journalctl -u monitor-backend')。${NC}"
+        exit 1
+    fi
+    echo "    - 后端服务已启动并设置为开机自启。"
 
     echo -e "${GREEN}=====================================================${NC}"
-    echo -e "${GREEN}          服务端安装/更新成功! 🎉${NC}"
-    echo -e "您的监控面板地址: ${YELLOW}https://$DOMAIN${NC}"
-    echo -e "请牢记您设置的两种密码！"
-    echo -e "现在您可以去需要监控的服务器上，运行此脚本并选择'安装被控端'来进行安装或更新。"
+    echo -e "${GREEN}      服务端 (前端 + 后端) 安装/更新成功！            ${NC}"
+    echo -e "${GREEN}      请访问 http://$DOMAIN_INPUT 查看监控面板。       ${NC}"
     echo -e "${GREEN}=====================================================${NC}"
 }
 
-# --- Function: Install/Update Agent ---
+# --- 函数：安装/更新 Agent (客户端) ---
 install_agent() {
-    echo -e "${YELLOW}开始安装或更新被控端 (Agent)...${NC}"
+    echo -e "${YELLOW}开始安装或更新 Agent (客户端)...${NC}"
 
-    local AGENT_PATH="/opt/monitor-agent/agent.sh"
-    local AGENT_SERVICE_PATH="/etc/systemd/system/monitor-agent.service"
-    local IS_UPDATE=false
-    local OLD_SERVER_ID=""
-    local OLD_SERVER_NAME=""
-    local OLD_SERVER_LOCATION=""
-    local OLD_BACKEND_URL=""
-    local OLD_NET_INTERFACE=""
+    # 1. 获取Agent安装密码
+    read -p "请输入Agent安装密码 (与服务端配置一致): " AGENT_INSTALL_PASSWORD_INPUT_AGENT
+    BACKEND_DOMAIN="" # 用于Agent的后端域名
 
-    if [ -f "$AGENT_PATH" ] && [ -f "$AGENT_SERVICE_PATH" ]; then
-        IS_UPDATE=true
-        echo "--> 检测到现有Agent安装，将进行更新操作。"
-        # Stop service to avoid conflicts
-        echo "--> 正在停止现有Agent服务..."
-        sudo systemctl stop monitor-agent.service > /dev/null 2>&1
-        sudo systemctl disable monitor-agent.service > /dev/null 2>&1
-        
-        # Try to read configuration from old script, suppress grep errors
-        OLD_BACKEND_URL=$(grep "BACKEND_URL=" "$AGENT_PATH" 2>/dev/null | cut -d\" -f2)
-        OLD_SERVER_ID=$(grep "SERVER_ID=" "$AGENT_PATH" 2>/dev/null | cut -d\" -f2)
-        OLD_SERVER_NAME=$(grep "SERVER_NAME=" "$AGENT_PATH" 2>/dev/null | cut -d\" -f2)
-        OLD_SERVER_LOCATION=$(grep "SERVER_LOCATION=" "$AGENT_PATH" 2>/dev/null | cut -d\" -f2)
-        OLD_NET_INTERFACE=$(grep "NET_INTERFACE=" "$AGENT_PATH" 2>/dev/null | cut -d\" -f2)
-
-        # Extract domain from full URL
-        OLD_BACKEND_DOMAIN=$(echo "$OLD_BACKEND_URL" | sed 's#/api/report##')
-
-        if [ -n "$OLD_BACKEND_DOMAIN" ]; then
-            echo "--> 检测到旧的后端域名: $OLD_BACKEND_DOMAIN"
-        fi
-        if [ -n "$OLD_SERVER_ID" ]; then
-            echo "--> 检测到旧的服务器ID: $OLD_SERVER_ID"
-        fi
-        if [ -n "$OLD_SERVER_NAME" ]; then
-            echo "--> 检测到旧的服务器名称: $OLD_SERVER_NAME"
-        fi
-    fi
-
-    # 1. Get user input
-    local BACKEND_DOMAIN_INPUT=""
-    if [ -n "$OLD_BACKEND_DOMAIN" ]; then
-        read -p "检测到旧的后端API域名: ${OLD_BACKEND_DOMAIN}。是否继续使用此域名? (y/N): " USE_OLD_BACKEND_DOMAIN
-        if [[ "$USE_OLD_BACKEND_DOMAIN" == "y" || "$USE_OLD_BACKEND_DOMAIN" == "Y" ]]; then
-            BACKEND_DOMAIN="$OLD_BACKEND_DOMAIN"
-            echo "继续使用后端域名: $BACKEND_DOMAIN"
+    # 检查是否存在已安装的服务端，尝试从Nginx配置中提取域名
+    if [ -f "/etc/nginx/sites-available/$DOMAIN_INPUT" ]; then
+        BACKEND_DOMAIN=$(grep "server_name" "/etc/nginx/sites-available/$DOMAIN_INPUT" | awk '{print $2}' | cut -d';' -f1)
+        if [ -z "$BACKEND_DOMAIN" ]; then
+             read -p "无法从Nginx配置中自动获取域名，请输入后端域名 (例如: monitor.yourdomain.com): " BACKEND_DOMAIN
         else
-            read -p "请输入您的后端API域名 (例如: https://monitor.yourdomain.com): " BACKEND_DOMAIN
+            echo "--> 自动检测到后端域名为: $BACKEND_DOMAIN"
         fi
     else
-        read -p "请输入您的后端API域名 (例如: https://monitor.yourdomain.com): " BACKEND_DOMAIN
+        read -p "请输入后端域名 (例如: monitor.yourdomain.com): " BACKEND_DOMAIN
     fi
 
-    if [ -z "$BACKEND_DOMAIN" ]; then
-        echo -e "${RED}错误：后端域名不能为空！${NC}"
-        exit 1
-    fi
 
-    read -s -p "请输入【被控端安装密码】: " AGENT_INSTALL_PASSWORD_INPUT
-    echo ""
+    # 验证Agent安装密码
+    echo "--> 正在验证Agent安装密码..."
+    RESPONSE=$(curl -s -X POST -H "Content-Type: application/json" -d "{\"password\": \"$AGENT_INSTALL_PASSWORD_INPUT_AGENT\"}" "https://$BACKEND_DOMAIN/api/verify-agent-password")
     
-    # 2. Verify password
-    echo "--> 正在验证安装密码..."
-    VERIFY_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST -H "Content-Type: application/json" -d "{\"password\":\"$AGENT_INSTALL_PASSWORD_INPUT\"}" "$BACKEND_DOMAIN/api/verify-agent-password")
-    
-    if [ "$VERIFY_STATUS" -ne 200 ]; then
-        echo -e "${RED}错误：被控端安装密码错误或无法连接到后端！状态码: $VERIFY_STATUS${NC}"
-        exit 1
-    fi
-    echo -e "${GREEN}密码验证成功！正在继续安装/更新...${NC}"
-
-    # 3. Install dependencies
-    echo "--> 正在检查并安装/更新依赖 (sysstat, bc)..."
-    dpkg -s sysstat >/dev/null 2>&1 || sudo apt-get install -y sysstat
-    dpkg -s bc >/dev/null 2>&1 || sudo apt-get install -y bc
-    if [ $? -ne 0 ]; then
-        echo -e "${RED}错误：依赖 'sysstat' 或 'bc' 安装失败。${NC}"
-        exit 1
-    fi
-
-    # 4. Get server information
-    local SERVER_ID_INPUT="$OLD_SERVER_ID"
-    local SERVER_NAME_INPUT="$OLD_SERVER_NAME"
-    local SERVER_LOCATION_INPUT="$OLD_SERVER_LOCATION"
-
-    if [ -z "$OLD_SERVER_ID" ]; then
-        read -p "请为当前服务器设置一个唯一的ID (例如: web-server-01): " SERVER_ID_INPUT
+    if echo "$RESPONSE" | grep -q "\"success\":true"; then
+        echo -e "${GREEN}密码验证成功！${NC}"
     else
-        read -p "检测到旧的服务器ID: ${OLD_SERVER_ID}。是否继续使用此ID? (y/N): " USE_OLD_SERVER_ID
-        if [[ "$USE_OLD_SERVER_ID" == "y" || "$USE_OLD_SERVER_ID" == "Y" ]]; then
+        echo -e "${RED}密码验证失败。请检查 Agent 安装密码是否正确。${NC}"
+        echo "错误信息: $RESPONSE"
+        exit 1
+    fi
+
+    # 2. 获取服务器信息
+    SERVER_ID_INPUT=$(uuidgen || head /dev/urandom | tr -dc A-Za-z0-9 | head -c 16) # 生成唯一ID
+    OLD_SERVER_ID=$(grep "SERVER_ID=" /opt/monitor-agent/agent.sh 2>/dev/null | cut -d'=' -f2 | tr -d '"')
+
+    # 如果是更新，则尝试保留旧的SERVER_ID
+    if [ -n "$OLD_SERVER_ID" ]; then
+        read -p "检测到旧的服务器ID: ${OLD_SERVER_ID}。是否继续使用此ID? (y/N): " USE_OLD_ID
+        if [[ "$USE_OLD_ID" == "y" || "$USE_OLD_ID" == "Y" ]]; then
+            SERVER_ID_INPUT="$OLD_SERVER_ID"
             echo "继续使用服务器ID: $SERVER_ID_INPUT"
         else
-            read -p "请为当前服务器设置一个唯一的ID (例如: web-server-01): " SERVER_ID_INPUT
+            read -p "请输入当前服务器的唯一ID (例如: my-server-001): " SERVER_ID_INPUT
         fi
+    else
+        read -p "请输入当前服务器的唯一ID (例如: my-server-001，将作为服务器的唯一标识): " SERVER_ID_INPUT
     fi
 
-    if [ -z "$OLD_SERVER_NAME" ]; then
-        read -p "请输入当前服务器的名称 (例如: 亚太-Web服务器): " SERVER_NAME_INPUT
-    else
+    OLD_SERVER_NAME=$(grep "SERVER_NAME=" /opt/monitor-agent/agent.sh 2>/dev/null | cut -d'=' -f2 | tr -d '"')
+    if [ -n "$OLD_SERVER_NAME" ]; then
         read -p "检测到旧的服务器名称: ${OLD_SERVER_NAME}。是否继续使用此名称? (y/N): " USE_OLD_SERVER_NAME
         if [[ "$USE_OLD_SERVER_NAME" == "y" || "$USE_OLD_SERVER_NAME" == "Y" ]]; then
+            SERVER_NAME_INPUT="$OLD_SERVER_NAME"
             echo "继续使用服务器名称: $SERVER_NAME_INPUT"
         else
-            read -p "请输入当前服务器的名称 (例如: 亚太-Web服务器): " SERVER_NAME_INPUT
+            read -p "请输入当前服务器的名称 (例如: 我的Debian服务器): " SERVER_NAME_INPUT
         fi
+    else
+        read -p "请输入当前服务器的名称 (例如: 我的Debian服务器): " SERVER_NAME_INPUT
     fi
 
-    if [ -z "$OLD_SERVER_LOCATION" ]; then
-        read -p "请输入当前服务器的位置 (例如: 新加坡): " SERVER_LOCATION_INPUT
-    else
+    OLD_SERVER_LOCATION=$(grep "SERVER_LOCATION=" /opt/monitor-agent/agent.sh 2>/dev/null | cut -d'=' -f2 | tr -d '"')
+    if [ -n "$OLD_SERVER_LOCATION" ]; then
         read -p "检测到旧的位置: ${OLD_SERVER_LOCATION}。是否继续使用此位置? (y/N): " USE_OLD_SERVER_LOCATION
         if [[ "$USE_OLD_SERVER_LOCATION" == "y" || "$USE_OLD_SERVER_LOCATION" == "Y" ]]; then
+            SERVER_LOCATION_INPUT="$OLD_SERVER_LOCATION"
             echo "继续使用服务器位置: $SERVER_LOCATION_INPUT"
         else
             read -p "请输入当前服务器的位置 (例如: 新加坡): " SERVER_LOCATION_INPUT
         fi
+    else
+        read -p "请输入当前服务器的位置 (例如: 新加坡): " SERVER_LOCATION_INPUT
     fi
 
     NET_INTERFACE=$(ip -o -4 route show to default | awk '{print $5}')
     echo "--> 自动检测到网络接口为: $NET_INTERFACE"
 
-    # 5. Deploy Agent Script (forced update)
+    # 3. 部署 Agent Script (forced update)
     echo "--> 正在部署/更新Agent脚本..."
     sudo mkdir -p /opt/monitor-agent
     sudo curl -s -L "https://raw.githubusercontent.com/cjap111/vps-monitor-panel/main/agent/agent.sh" -o /opt/monitor-agent/agent.sh
     sudo chmod +x /opt/monitor-agent/agent.sh
 
-    # 6. Update Agent Configuration
-    sudo sed -i "s|BACKEND_URL=.*|BACKEND_URL=\"$BACKEND_DOMAIN/api/report\"|g" /opt/monitor-agent/agent.sh
+    # 4. 更新 Agent Configuration
+    sudo sed -i "s|BACKEND_URL=.*|BACKEND_URL=\"https://$BACKEND_DOMAIN/api/report\"|g" /opt/monitor-agent/agent.sh
     sudo sed -i "s|SERVER_ID=.*|SERVER_ID=\"$SERVER_ID_INPUT\"|g" /opt/monitor-agent/agent.sh
     sudo sed -i "s|SERVER_NAME=.*|SERVER_NAME=\"$SERVER_NAME_INPUT\"|g" /opt/monitor-agent/agent.sh
     sudo sed -i "s|SERVER_LOCATION=.*|SERVER_LOCATION=\"$SERVER_LOCATION_INPUT\"|g" /opt/monitor-agent/agent.sh
     sudo sed -i "s|NET_INTERFACE=.*|NET_INTERFACE=\"$NET_INTERFACE\"|g" /opt/monitor-agent/agent.sh
-    
-    # 7. Create or update Systemd service
-    echo "--> 正在创建/更新后台上报服务..."
-    sudo tee /etc/systemd/system/monitor-agent.service > /dev/null <<EOF
+    echo "    - Agent 配置更新完成。"
+
+    # 5. 创建和启动 Agent 服务 (systemd)
+    echo "--> 正在创建 systemd 服务并启动 Agent..."
+    # 注意：这里使用了一个 heredoc，EOF 必须独占一行且没有空格
+    sudo bash -c "cat > /etc/systemd/system/monitor-agent.service << 'EOF'
 [Unit]
-Description=Monitor Agent
-Aft
+Description=Monitor Agent Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/monitor-agent
+ExecStart=/bin/bash /opt/monitor-agent/agent.sh
+Restart=always
+RestartSec=60
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=monitor-agent
+
+[Install]
+WantedBy=multi-user.target
+EOF"
+    
+    sudo systemctl daemon-reload
+    sudo systemctl enable monitor-agent
+    sudo systemctl restart monitor-agent
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}错误：Agent 服务启动失败。请检查日志 ('sudo journalctl -u monitor-agent')。${NC}"
+        exit 1
+    fi
+    echo "    - Agent 服务已启动并设置为开机自启。"
+
+    echo -e "${GREEN}=====================================================${NC}"
+    echo -e "${GREEN}          Agent (客户端) 安装/更新成功！            ${NC}"
+    echo -e "${GREEN}=====================================================${NC}"
+}
+
+# --- 函数：卸载服务端 ---
+uninstall_server() {
+    echo -e "${YELLOW}开始卸载服务端 (前端 + 后端)...${NC}"
+    
+    # 获取域名以便清理 Nginx 配置
+    read -p "请输入您安装时使用的域名 (例如: monitor.yourdomain.com): " DOMAIN_TO_UNINSTALL
+
+    echo "--> 正在停止并删除后端服务..."
+    sudo systemctl stop monitor-backend
+    sudo systemctl disable monitor-backend
+    sudo rm -f /etc/systemd/system/monitor-backend.service
+    sudo rm -rf /opt/monitor-backend # 彻底删除后端文件和数据
+
+    echo "--> 正在清理 Nginx 配置和前端文件..."
+    sudo rm -f "/etc/nginx/sites-available/$DOMAIN_TO_UNINSTALL"
+    sudo rm -f "/etc/nginx/sites-enabled/$DOMAIN_TO_UNINSTALL"
+    sudo rm -rf "/var/www/monitor-frontend"
+
+    # 尝试重载 Nginx
+    sudo nginx -t && sudo systemctl reload nginx 2>/dev/null
+    
+    echo -e "${GREEN}服务端卸载完成！${NC}"
+    echo -e "${GREEN}请手动删除 Certbot 证书 (如果已安装): sudo certbot delete --cert-name $DOMAIN_TO_UNINSTALL ${NC}"
+}
+
+# --- 函数：卸载 Agent ---
+uninstall_agent() {
+    echo -e "${YELLOW}开始卸载 Agent (客户端)...${NC}"
+    echo "--> 正在停止并删除 Agent 服务..."
+    sudo systemctl stop monitor-agent
+    sudo systemctl disable monitor-agent
+    sudo rm -f /etc/systemd/system/monitor-agent.service
+    sudo rm -rf /opt/monitor-agent # 彻底删除 Agent 文件
+
+    echo -e "${GREEN}Agent 卸载完成！${NC}"
+}
+
+# --- 主菜单 ---
+while true; do
+    echo -e "${GREEN}请选择您要执行的操作:${NC}"
+    echo "1. ${GREEN}安装或更新服务端 (前端 + 后端)${NC}"
+    echo "2. ${GREEN}安装或更新 Agent (客户端)${NC}"
+    echo "3. ${RED}卸载服务端 (前端 + 后端)${NC}"
+    echo "4. ${RED}卸载 Agent (客户端)${NC}"
+    echo "5. ${YELLOW}退出${NC}"
+    echo -n "请输入您的选择 [1-5]: "
+    read CHOICE
+
+    case $CHOICE in
+        1)
+            install_server
+            break
+            ;;
+        2)
+            install_agent
+            break
+            ;;
+        3)
+            uninstall_server
+            break
+            ;;
+        4)
+            uninstall_agent
+            break
+            ;;
+        5)
+            echo "退出脚本。"
+            break
+            ;;
+        *)
+            echo -e "${RED}无效的选择，请输入 1 到 5 之间的数字。${NC}"
+            ;;
+    esac
+    echo ""
+done
