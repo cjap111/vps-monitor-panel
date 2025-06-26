@@ -213,6 +213,16 @@
                         <label for="settingResetDay" class="block text-sm font-medium text-gray-300 mb-2">流量重置日 (1-28)</label>
                         <input type="number" min="1" max="28" id="settingResetDay" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:ring-indigo-500 focus:border-indigo-500" required>
                     </div>
+                    <!-- New: Reset Hour Input -->
+                    <div>
+                        <label for="settingResetHour" class="block text-sm font-medium text-gray-300 mb-2">重置时间 (小时, 0-23)</label>
+                        <input type="number" min="0" max="23" id="settingResetHour" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:ring-indigo-500 focus:border-indigo-500" required>
+                    </div>
+                    <!-- New: Reset Minute Input -->
+                    <div>
+                        <label for="settingResetMinute" class="block text-sm font-medium text-gray-300 mb-2">重置时间 (分钟, 0-59)</label>
+                        <input type="number" min="0" max="59" id="settingResetMinute" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:ring-indigo-500 focus:border-indigo-500" required>
+                    </div>
                     <!-- New: Total Traffic Limit Input -->
                     <div>
                         <label for="settingTotalTrafficLimit" class="block text-sm font-medium text-gray-300 mb-2">总流量限制 (GB) (0 表示无限制)</label>
@@ -554,7 +564,12 @@
 
                 if (totalNetUpElement) totalNetUpElement.textContent = `${totalNetUpGB} GB`;
                 if (totalNetDownElement) totalNetDownElement.textContent = `${totalNetDownGB} GB`;
-                if (resetInfoElement) resetInfoElement.textContent = `每月${server.resetDay}日重置`;
+                // Update reset info with precise time
+                if (resetInfoElement) {
+                    const hour = String(server.resetHour || 0).padStart(2, '0');
+                    const minute = String(server.resetMinute || 0).padStart(2, '0');
+                    resetInfoElement.textContent = `每月${server.resetDay}日 ${hour}:${minute} 重置`;
+                }
 
                 // Calculate and update Remaining Traffic
                 const totalTrafficLimitGB = (server.totalTrafficLimit !== undefined && typeof server.totalTrafficLimit === 'number') ? server.totalTrafficLimit : 0;
@@ -755,7 +770,12 @@
 
                 if (document.getElementById('settingTotalNetUp')) document.getElementById('settingTotalNetUp').value = currentTotalNetUp;
                 if (document.getElementById('settingTotalNetDown')) document.getElementById('settingTotalNetDown').value = currentTotalNetDown;
-                if (document.getElementById('settingResetDay')) document.getElementById('settingResetDay').value = server.resetDay;
+                if (document.getElementById('settingResetDay')) document.getElementById('settingResetDay').value = server.resetDay !== undefined ? server.resetDay : 1; // Default to 1
+                // Populate new reset hour and minute fields
+                if (document.getElementById('settingResetHour')) document.getElementById('settingResetHour').value = server.resetHour !== undefined ? server.resetHour : 0; // Default to 0 (midnight)
+                if (document.getElementById('settingResetMinute')) document.getElementById('settingResetMinute').value = server.resetMinute !== undefined ? server.resetMinute : 0; // Default to 0
+
+
                 if (document.getElementById('settingsPassword')) document.getElementById('settingsPassword').value = '';
 
                 // Populate new traffic limit and calculation mode fields
@@ -919,7 +939,12 @@
 
                 if (detailTotalNetUpElement) detailTotalNetUpElement.textContent = `${detailTotalNetUpGB} GB`;
                 if (detailTotalNetDownElement) detailTotalNetDownElement.textContent = `${detailTotalNetDownGB} GB`;
-                if (detailResetInfoElement) detailResetInfoElement.textContent = `每月${server.resetDay}日重置`;
+                // Update detail reset info with precise time
+                if (detailResetInfoElement) {
+                    const hour = String(server.resetHour || 0).padStart(2, '0');
+                    const minute = String(server.resetMinute || 0).padStart(2, '0');
+                    detailResetInfoElement.textContent = `每月${server.resetDay}日 ${hour}:${minute} 重置`;
+                }
 
                 const detailUptimeElement = document.getElementById('detailUptime');
                 if (detailUptimeElement) {
@@ -1140,6 +1165,8 @@
                     totalNetUp: parseFloat(document.getElementById('settingTotalNetUp').value) * GB_IN_BYTES,
                     totalNetDown: parseFloat(document.getElementById('settingTotalNetDown').value) * GB_IN_BYTES,
                     resetDay: parseInt(document.getElementById('settingResetDay').value),
+                    resetHour: parseInt(document.getElementById('settingResetHour').value), // Add this
+                    resetMinute: parseInt(document.getElementById('settingResetMinute').value), // Add this
                     password: settingsPassword,
                     expirationDate: expirationDate,
                     totalTrafficLimit: totalTrafficLimitGB, // Pass GB directly
