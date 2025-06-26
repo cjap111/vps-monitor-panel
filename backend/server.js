@@ -235,7 +235,7 @@ app.post('/api/servers/:id/settings', (req, res) => {
     const { totalNetUp, totalNetDown, resetDay, resetHour, resetMinute, password, expirationDate, totalTrafficLimit, trafficCalculationMode } = req.body;
 
     console.log(`[${new Date().toISOString()}] Received settings update for server ID: ${id}`);
-    console.log(`[${new Date().toISOString()}] New settings: totalTrafficLimit=${totalTrafficLimit}, trafficCalculationMode=${trafficCalculationMode}, resetDay=${resetDay}, resetHour=${resetHour}, resetMinute=${resetMinute}`);
+    console.log(`[${new Date().toISOString()}] New settings: totalTrafficLimit=${totalTrafficLimit}, trafficCalculationMode=${trafficCalculationMode}, resetDay=${resetDay}, resetHour=${resetHour}, Minute=${resetMinute}`);
 
 
     // Validate agent installation password
@@ -312,7 +312,7 @@ function checkAndResetTraffic() {
     const currentShanghaiDate = new Date(nowInShanghai);
     const currentDayShanghai = currentShanghaiDate.getDate();
     const currentHourShanghai = currentShanghaiDate.getHours();
-    const currentMinuteShanghai = currentShanghaiDate.getMinutes(); // Get current minute
+    const currentMinuteShanghai = currentShanghaiDate.getMinutes();
     const currentMonthYearShanghai = `${currentShanghaiDate.getFullYear()}-${currentShanghaiDate.getMonth() + 1}`;
 
     let changed = false;
@@ -321,18 +321,29 @@ function checkAndResetTraffic() {
 
     Object.keys(serverDataStore).forEach(id => {
         const server = serverDataStore[id];
-        // Check if reset day, hour, and minute are reached and not yet reset for the current month
-        if (server.resetDay === currentDayShanghai &&
-            server.resetHour === currentHourShanghai &&
-            server.resetMinute === currentMinuteShanghai && // Compare minutes
-            server.lastReset !== currentMonthYearShanghai) {
 
+        // Construct the target reset date object for the current month
+        const targetResetDate = new Date(currentShanghaiDate.getFullYear(),
+                                         currentShanghaiDate.getMonth(),
+                                         server.resetDay,
+                                         server.resetHour,
+                                         server.resetMinute,
+                                         0); // Seconds to 0 for precise comparison
+
+        // Check if the current time has passed or is exactly the configured reset time for the current month.
+        // This makes the reset more robust against slight timing inaccuracies of setInterval.
+        const hasPassedOrIsResetTime = currentShanghaiDate.getTime() >= targetResetDate.getTime();
+
+        // Condition for reset:
+        // 1. The current time has passed or is exactly the configured reset time.
+        // 2. The server has not yet been reset for the current month (checked via lastReset string).
+        if (hasPassedOrIsResetTime && server.lastReset !== currentMonthYearShanghai) {
             console.log(`[${new Date().toISOString()}] Resetting traffic for server ${id} as per configured time...`);
             server.totalNet = { up: 0, down: 0 };
             server.lastReset = currentMonthYearShanghai;
             changed = true;
         } else {
-            console.log(`[${new Date().toISOString()}] Server ${id}: No reset needed. Configured: Day ${server.resetDay}, Hour ${server.resetHour}, Minute ${server.resetMinute}. Current Shanghai: Day ${currentDayShanghai}, Hour ${currentHourShanghai}, Minute ${currentMinuteShanghai}. Last reset: ${server.lastReset}.`);
+            console.log(`[${new Date().toISOString()}] Server ${id}: No reset needed. Configured: Day ${server.resetDay}, Hour ${server.resetHour}, Minute ${server.resetMinute}. Current Shanghai: Day ${currentDayShanghai}, Hour ${currentHourShanghai}, Minute ${currentMinuteShanghai}. Last reset: ${server.lastReset}. Has passed reset time: ${hasPassedOrIsResetTime}.`);
         }
     });
 
