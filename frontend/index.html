@@ -459,6 +459,34 @@
                 }
             }
 
+            // Function to format uptime from seconds to human-readable string
+            function formatUptime(totalSeconds) {
+                if (totalSeconds === 0) return '离线或数据缺失';
+
+                const days = Math.floor(totalSeconds / (3600 * 24));
+                totalSeconds %= (3600 * 24);
+                const hours = Math.floor(totalSeconds / 3600);
+                totalSeconds %= 3600;
+                const minutes = Math.floor(totalSeconds / 60);
+
+                let uptimeString = '在线 ';
+                if (days > 0) {
+                    uptimeString += `${days} 天`;
+                    if (hours > 0 || minutes > 0) uptimeString += ', ';
+                }
+                if (hours > 0) {
+                    uptimeString += `${hours} 小时`;
+                    if (minutes > 0) uptimeString += ', ';
+                }
+                if (minutes > 0 && days === 0) { // Only show minutes if less than an hour for concise display
+                    uptimeString += `${minutes} 分钟`;
+                } else if (minutes === 0 && days === 0 && hours === 0) { // If less than a minute, show seconds
+                     uptimeString += `< 1 分钟`;
+                }
+
+                return uptimeString.trim();
+            }
+
             // Function to update a single server card (main grid view)
             function updateServerCard(cardElement, server) {
                 // Update basic info
@@ -532,17 +560,10 @@
                 if (netUpElement) netUpElement.textContent = `${formattedNetUp.value} ${formattedNetUp.unit}`;
 
 
-                // Update Uptime
-                const startTime = server.startTime;
+                // Update Uptime from systemUptime
                 const uptimeElement = cardElement.querySelector('[data-id="uptime"]');
                 if (uptimeElement) {
-                    if (startTime) {
-                        const uptimeMs = Date.now() - startTime;
-                        const uptimeDays = Math.floor(uptimeMs / (1000 * 60 * 60 * 24));
-                        uptimeElement.textContent = `在线 ${uptimeDays} 天`;
-                    } else {
-                        uptimeElement.textContent = `在线 0 天`;
-                    }
+                    uptimeElement.textContent = formatUptime(server.systemUptime || 0);
                 }
 
                 // Update Total Net Traffic
@@ -923,13 +944,7 @@
 
                 const detailUptimeElement = document.getElementById('detailUptime');
                 if (detailUptimeElement) {
-                    if (server.startTime) {
-                        const uptimeMs = Date.now() - server.startTime;
-                        const uptimeDays = Math.floor(uptimeMs / (1000 * 60 * 60 * 24));
-                        detailUptimeElement.textContent = `在线 ${uptimeDays} 天`;
-                    } else {
-                        detailUptimeElement.textContent = `在线 0 天`;
-                    }
+                    detailUptimeElement.textContent = formatUptime(server.systemUptime || 0);
                 }
 
                 // Calculate and update Remaining Traffic for detail modal
