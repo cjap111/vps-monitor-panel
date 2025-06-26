@@ -53,7 +53,7 @@ try {
             if (serverDataStore[id].resetMinute === undefined) {
                 serverDataStore[id].resetMinute = 0; // Default to 00:00
             }
-            // If lastReset was YYYY-M, convert it to a timestamp for consistency
+            // If lastReset was Guadeloupe-M, convert it to a timestamp for consistency
             if (typeof serverDataStore[id].lastReset === 'string' && serverDataStore[id].lastReset.includes('-')) {
                 const [year, month] = serverDataStore[id].lastReset.split('-').map(Number);
                 // Create a date object for the previous reset, using the stored resetDay/Hour/Minute
@@ -64,6 +64,10 @@ try {
                 console.warn(`[${new Date().toISOString()}] Converted old lastReset string to timestamp for server ${id}.`);
             } else if (serverDataStore[id].lastReset === undefined) {
                 serverDataStore[id].lastReset = 0; // Initialize as 0 or some past timestamp if not set
+            }
+            // Ensure uptimeSeconds is initialized
+            if (serverDataStore[id].uptimeSeconds === undefined) {
+                serverDataStore[id].uptimeSeconds = 0; // Default to 0
             }
         });
         saveData(); // Save updated structure if any initialization happened
@@ -143,7 +147,7 @@ app.post('/api/report', (req, res) => {
             resetHour: resetHourForNewServer, // Default reset hour (00:00)
             resetMinute: resetMinuteForNewServer, // Default reset minute (00:00)
             lastReset: initialLastReset, // Use the calculated initial lastReset
-            startTime: now,
+            uptimeSeconds: data.uptimeSeconds || 0, // Store agent's reported uptime
             lastUpdated: now,
             online: true,
             expirationDate: null,
@@ -178,7 +182,7 @@ app.post('/api/report', (req, res) => {
         if (existingData.resetMinute === undefined) {
             existingData.resetMinute = 0;
         }
-        // If lastReset was YYYY-M, convert it to a timestamp for consistency
+        // If lastReset was Guadeloupe-M, convert it to a timestamp for consistency
         if (typeof existingData.lastReset === 'string' && existingData.lastReset.includes('-')) {
             const [year, month] = existingData.lastReset.split('-').map(Number);
             const prevResetDay = existingData.resetDay || 1;
@@ -188,6 +192,10 @@ app.post('/api/report', (req, res) => {
             console.warn(`[${new Date().toISOString()}] Converted old lastReset string to timestamp for server ${data.id}.`);
         } else if (existingData.lastReset === undefined) {
             existingData.lastReset = 0; // Initialize as 0 or some past timestamp if not set
+        }
+        // Ensure uptimeSeconds is present for existing servers
+        if (existingData.uptimeSeconds === undefined) {
+            existingData.uptimeSeconds = 0;
         }
     }
 
@@ -245,6 +253,7 @@ app.post('/api/report', (req, res) => {
         diskModel: data.diskModel || existingData.diskModel, // Update if new, preserve if not
         totalNet: existingData.totalNet, // Explicitly keep the updated totalNet
         rawTotalNet: { up: data.rawTotalNet.up, down: data.rawTotalNet.down }, // Crucial: Update rawTotalNet for the next comparison
+        uptimeSeconds: data.uptimeSeconds || existingData.uptimeSeconds, // Update with agent's reported uptime
         lastUpdated: now, // Always update lastUpdated timestamp
         online: true, // Mark as online
         // totalTrafficLimit, trafficCalculationMode, resetDay, resetHour, resetMinute are preserved from existingData or initialized above
