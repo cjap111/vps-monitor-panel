@@ -105,10 +105,29 @@ app.post('/api/report', (req, res) => {
     }
 
     const now = Date.now();
+    const currentYear = new Date().getFullYear();
+    const currentMonth = new Date().getMonth(); // 0-indexed
     let existingData = serverDataStore[data.id];
 
     // Initialize server data if it's a new server or core data structures are missing
     if (!existingData) {
+        // Calculate initial lastReset to ensure first reset happens correctly
+        const resetDayForNewServer = data.resetDay !== undefined ? data.resetDay : 1;
+        const resetHourForNewServer = data.resetHour !== undefined ? data.resetHour : 0;
+        const resetMinuteForNewServer = data.resetMinute !== undefined ? data.resetMinute : 0;
+
+        const currentMonthResetDate = new Date(currentYear, currentMonth, resetDayForNewServer, resetHourForNewServer, resetMinuteForNewServer, 0, 0);
+        const prevMonthResetDate = new Date(currentYear, currentMonth - 1, resetDayForNewServer, resetHourForNewServer, resetMinuteForNewServer, 0, 0);
+
+        let initialLastReset;
+        if (now >= currentMonthResetDate.getTime()) {
+            // If current time is past this month's reset point, set lastReset to this month's reset point
+            initialLastReset = currentMonthResetDate.getTime();
+        } else {
+            // If current time is before this month's reset point, set lastReset to last month's reset point
+            initialLastReset = prevMonthResetDate.getTime();
+        }
+
         existingData = {
             id: data.id,
             name: data.name,
@@ -120,10 +139,10 @@ app.post('/api/report', (req, res) => {
             net: data.net, // Current network speed
             rawTotalNet: { up: data.rawTotalNet ? data.rawTotalNet.up : 0, down: data.rawTotalNet ? data.rawTotalNet.down : 0 }, // Initialize with current raw data, handle potential undefined
             totalNet: { up: 0, down: 0 }, // Initialize accumulated total traffic
-            resetDay: 1, // Default reset day
-            resetHour: 0, // Default reset hour (00:00)
-            resetMinute: 0, // Default reset minute (00:00)
-            lastReset: now, // Store timestamp of last reset for better accuracy
+            resetDay: resetDayForNewServer, // Default reset day
+            resetHour: resetHourForNewServer, // Default reset hour (00:00)
+            resetMinute: resetMinuteForNewServer, // Default reset minute (00:00)
+            lastReset: initialLastReset, // Use the calculated initial lastReset
             startTime: now,
             lastUpdated: now,
             online: true,
@@ -134,7 +153,7 @@ app.post('/api/report', (req, res) => {
             totalTrafficLimit: 0, // Initialize new field for total traffic limit
             trafficCalculationMode: 'bidirectional' // Initialize new field for calculation mode
         };
-        console.log(`[${new Date().toISOString()}] New server ${data.id} added.`);
+        console.log(`[${new Date().toISOString()}] New server ${data.id} added with initial lastReset: ${new Date(initialLastReset).toISOString()}.`);
     } else {
         // Ensure existing data has rawTotalNet and totalNet for calculations
         if (!existingData.rawTotalNet) {
@@ -150,6 +169,9 @@ app.post('/api/report', (req, res) => {
         if (existingData.trafficCalculationMode === undefined) {
             existingData.trafficCalculationMode = 'bidirectional';
         }
+        if (existingData.resetDay === undefined) {
+            existingData.resetDay = 1;
+        }
         if (existingData.resetHour === undefined) {
             existingData.resetHour = 0;
         }
@@ -163,7 +185,7 @@ app.post('/api/report', (req, res) => {
             const prevResetHour = existingData.resetHour || 0;
             const prevResetMinute = existingData.resetMinute || 0;
             existingData.lastReset = new Date(year, month - 1, prevResetDay, prevResetHour, prevResetMinute, 0, 0).getTime();
-            console.warn(`[${new Date().toISOString()}] Converted old lastReset string to timestamp for server ${id}.`);
+            console.warn(`[${new Date().toISOString()}] Converted old lastReset string to timestamp for server ${data.id}.`);
         } else if (existingData.lastReset === undefined) {
             existingData.lastReset = 0; // Initialize as 0 or some past timestamp if not set
         }
@@ -250,8 +272,8 @@ app.post('/api/servers/:id/settings', (req, res) => {
     // Destructure new fields: totalTrafficLimit and trafficCalculationMode
     const { totalNetUp, totalNetDown, resetDay, resetHour, resetMinute, password, expirationDate, totalTrafficLimit, trafficCalculationMode } = req.body;
 
-    console.log(`[${new Date().toISOString()}] Received settings update for server ID: ${id}`);
-    console.log(`[${new Date().toISOString()}] New settings: totalTrafficLimit=${totalTrafficLimit}, trafficCalculationMode=${trafficCalculationMode}, resetDay=${resetDay}, resetHour=${resetHour}, resetMinute=${resetMinute}`);
+    console.log(`[${new Date().toISOString()}] Received settings update for server ID: ${id}.`);
+    console.log(`[${new Date().toISOString()}] New settings: totalTrafficLimit=${totalTrafficLimit}, trafficCalculationMode=${trafficCalculationMode}, resetDay=${resetDay}, resetHour=${resetHour}, resetMinute=${resetMinute}.`);
 
 
     // Validate agent installation password
@@ -261,17 +283,42 @@ app.post('/api/servers/:id/settings', (req, res) => {
     }
 
     if (serverDataStore[id]) {
-        serverDataStore[id].totalNet.up = totalNetUp;
-        serverDataStore[id].totalNet.down = totalNetDown;
-        serverDataStore[id].resetDay = resetDay;
-        serverDataStore[id].resetHour = resetHour; // Save reset hour
-        serverDataStore[id].resetMinute = resetMinute; // Save reset minute
-        serverDataStore[id].expirationDate = expirationDate; // Save expiration date
-        // Save new traffic limit and calculation mode
-        serverDataStore[id].totalTrafficLimit = totalTrafficLimit;
-        serverDataStore[id].trafficCalculationMode = trafficCalculationMode;
+        const server = serverDataStore[id];
+        const oldResetDay = server.resetDay;
+        const oldResetHour = server.resetHour;
+        const oldResetMinute = server.resetMinute;
 
-        // Note: cpuModel, memModel, diskModel, rawTotalNet are not updated via settings route, they are only updated by agent reports.
+        server.totalNet.up = totalNetUp;
+        server.totalNet.down = totalNetDown;
+        server.resetDay = resetDay;
+        server.resetHour = resetHour;
+        server.resetMinute = resetMinute;
+        server.expirationDate = expirationDate; // Save expiration date
+        // Save new traffic limit and calculation mode
+        server.totalTrafficLimit = totalTrafficLimit;
+        server.trafficCalculationMode = trafficCalculationMode;
+
+        // Check if reset settings have changed, and if so, re-evaluate lastReset
+        if (oldResetDay !== resetDay || oldResetHour !== resetHour || oldResetMinute !== resetMinute) {
+            console.log(`[${new Date().toISOString()}] Server ${id}: Reset settings changed. Re-evaluating lastReset.`);
+            const now = new Date();
+            const currentYear = now.getFullYear();
+            const currentMonth = now.getMonth();
+
+            const currentMonthNewResetDate = new Date(currentYear, currentMonth, resetDay, resetHour, resetMinute, 0, 0);
+            const prevMonthNewResetDate = new Date(currentYear, currentMonth - 1, resetDay, resetHour, resetMinute, 0, 0);
+
+            if (now.getTime() >= currentMonthNewResetDate.getTime()) {
+                // If current time is past the new reset point for this month, set lastReset to this month's new reset point
+                server.lastReset = currentMonthNewResetDate.getTime();
+                console.log(`[${new Date().toISOString()}] Server ${id}: lastReset set to current month's new reset time: ${new Date(server.lastReset).toISOString()}.`);
+            } else {
+                // If current time is before the new reset point for this month, set lastReset to last month's new reset point
+                server.lastReset = prevMonthNewResetDate.getTime();
+                console.log(`[${new Date().toISOString()}] Server ${id}: lastReset set to previous month's new reset time: ${new Date(server.lastReset).toISOString()}.`);
+            }
+        }
+
         saveData(); // Save data
         console.log(`[${new Date().toISOString()}] Server ${id} settings updated successfully.`);
         res.status(200).send('Settings updated successfully.');
@@ -286,7 +333,7 @@ app.delete('/api/servers/:id', (req, res) => {
     const { id } = req.params;
     const { password } = req.body;
 
-    console.log(`[${new Date().toISOString()}] Received delete request for server ID: ${id}`);
+    console.log(`[${new Date().toISOString()}] Received delete request for server ID: ${id}.`);
 
     if (!password) {
         console.error(`[${new Date().toISOString()}] Password required for deleting server ${id}.`);
@@ -380,4 +427,3 @@ app.listen(PORT, '0.0.0.0', () => {
     // Run check immediately on startup
     checkAndResetTraffic();
 });
-
