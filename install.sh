@@ -10,11 +10,11 @@
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m' # 修正：移除了多余的反斜杠
-NC='\033[0m' # No Color
+NC='033[0m' # No Color
 
 # --- 脚本欢迎信息 ---
 echo -e "${GREEN}=====================================================${NC}"
-echo -e "${GREEN}      欢迎使用服务器监控面板一键安装/卸载/更新脚本      ${NC}"
+echo -e "${GREEN}      欢迎使用服务器监控面板一键安装/卸载/更新脚本V1.7      ${NC}"
 echo -e "${GREEN}=====================================================${NC}"
 echo ""
 
@@ -119,15 +119,27 @@ install_server() {
     fi
     
     # --- MODIFIED SECTION START ---
-    # 3. 配置Nginx - 先配置HTTP用于Certbot验证
+    # Ensure Nginx is completely stopped and no old processes are holding ports
+    echo "--> 正在尝试停止并清理Nginx旧进程和监听端口..."
+    sudo systemctl stop nginx > /dev/null 2>&1 || true
+    # Use fuser to find and kill processes holding ports 80 and 443
+    # Redirect stderr to /dev/null to suppress "no process found" messages
+    sudo fuser -k 80/tcp > /dev/null 2>&1 || true
+    sudo fuser -k 443/tcp > /dev/null 2>&1 || true
+    sleep 2 # Give a moment for ports to clear
+
+    # 3. Configure Nginx - Initial HTTP setup for Certbot validation
     echo "--> 正在配置Nginx HTTP代理用于Certbot验证..."
     NGINX_CONF="/etc/nginx/sites-available/$DOMAIN"
+    
+    sudo rm -f "/etc/nginx/sites-enabled/$OLD_DOMAIN_FROM_ENV" # Remove old symlink if domain changed
+    sudo rm -f "/etc/nginx/sites-enabled/$DOMAIN" # Remove current symlink to ensure fresh creation
+
     sudo tee "$NGINX_CONF" > /dev/null <<EOF
 server {
     listen 80;
     server_name $DOMAIN;
-
-    # Certbot will modify this block later for HTTPS redirect
+    # Certbot will modify this block later for HTTPS redirect and add 443 listener
     
     location /api {
         proxy_pass http://127.0.0.1:3000; # 将 /api 请求代理到 Node.js 后端
@@ -136,7 +148,6 @@ server {
         proxy_set_header Connection 'upgrade';
         proxy_set_header Host \$host;
         proxy_cache_bypass \$http_upgrade;
-        # 增加代理超时设置，防止后端响应慢导致连接关闭
         proxy_connect_timeout 600;
         proxy_send_timeout 600;
         proxy_read_timeout 600;
@@ -149,23 +160,17 @@ server {
     }
 }
 EOF
-    # 移除旧域名对应的 Nginx 符号链接（如果域名发生变化）
-    if [ -n "$OLD_DOMAIN_FROM_ENV" ] && [ "$OLD_DOMAIN_FROM_ENV" != "$DOMAIN" ] && [ -f "/etc/nginx/sites-enabled/$OLD_DOMAIN_FROM_ENV" ]; then
-        echo "--> 检测到域名更改，正在移除旧Nginx符号链接..."
-        sudo rm -f "/etc/nginx/sites-enabled/$OLD_DOMAIN_FROM_ENV"
-    fi
     sudo ln -s -f "$NGINX_CONF" /etc/nginx/sites-enabled/
     
-    # Test Nginx config after initial HTTP setup
-    echo "--> 正在测试Nginx HTTP配置..."
+    echo "--> 正在测试Nginx HTTP配置并启动..."
     sudo nginx -t
     if [ $? -ne 0 ]; then
         echo -e "${RED}错误：Nginx HTTP配置测试失败！请检查Nginx配置。${NC}"
         exit 1
     fi
-    sudo systemctl reload nginx # Reload Nginx to apply HTTP config for Certbot
+    sudo systemctl start nginx # Start Nginx to listen on port 80 for Certbot
 
-    # 4. 获取SSL证书 (如果证书不存在或需要续订)
+    # 4. Get SSL Certificate
     echo "--> 正在为 $DOMAIN 获取或续订SSL证书..."
 
     local EMAIL_INPUT=""
@@ -181,42 +186,40 @@ EOF
         read -p "请输入您的邮箱地址 (用于Let's Encrypt证书续订提醒): " EMAIL_INPUT
     fi
 
-    EMAIL="${EMAIL_INPUT:-$OLD_EMAIL}" # 使用新输入，如果没有则回退到旧邮箱
+    EMAIL="${EMAIL_INPUT:-$OLD_EMAIL}"
     if [ -z "$EMAIL" ]; then
         echo -e "${RED}错误：邮箱地址不能为空！申请SSL证书需要提供邮箱。${NC}"
-        exit 1 # 邮箱是申请新证书的必要条件
+        exit 1
     fi
 
     # Run Certbot to obtain certificate and modify Nginx config for HTTPS
-    # Adding --redirect here to let Certbot handle the HTTP to HTTPS redirect
-    # Removed the trailing comment from EMAIL variable in the certbot command to prevent invalid email error.
-    sudo certbot --nginx --agree-tos --non-interactive --redirect --cert-name "$DOMAIN" --deploy-hook "systemctl reload nginx" -m "$EMAIL" -d "$DOMAIN"
+    # Certbot automatically handles stopping/starting/reloading Nginx during the process
+    # Removed --deploy-hook as we re-write the config fully afterwards
+    sudo certbot --nginx --agree-tos --non-interactive --redirect --cert-name "$DOMAIN" -m "$EMAIL" -d "$DOMAIN"
     if [ $? -ne 0 ]; then
         echo -e "${RED}错误：Certbot获取/续订证书失败！请检查域名解析、防火墙及Certbot日志。${NC}"
         exit 1
     fi
 
-    # After Certbot, re-apply the full Nginx configuration with proxy settings
-    # Certbot creates/modifies the site config to add the HTTPS block. We need to ensure
-    # our specific proxy pass and root directives are correctly in place for the HTTPS block.
-    # It's safest to re-write the complete desired config now that certificates exist.
+    # After Certbot, re-apply the full Nginx configuration with proxy settings.
+    # Certbot will have written the SSL cert paths into the Nginx config already,
+    # but we re-write it to ensure our proxy rules and frontend root are exactly as desired.
     echo "--> 正在更新Nginx配置以包含HTTPS和后端代理..."
     sudo tee "$NGINX_CONF" > /dev/null <<EOF
 server {
     listen 80;
     server_name $DOMAIN;
-    return 301 https://\$host\$request_uri; # 强制 HTTP 跳转到 HTTPS (Certbot may add this, but good to ensure)
+    return 301 https://\$host\$request_uri; # 强制 HTTP 跳转到 HTTPS
 }
 
 server {
     listen 443 ssl;
     server_name $DOMAIN;
 
-    # Certbot will manage these certificate paths
+    # Certbot manages these certificate paths after successful acquisition
     ssl_certificate /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
 
-    # 推荐的 SSL 协议和密码套件，增强安全性
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
     ssl_prefer_server_ciphers on;
@@ -225,32 +228,31 @@ server {
     index index.html; # 默认索引文件
 
     location /api {
-        proxy_pass http://127.0.0.1:3000; # 将 /api 请求代理到 Node.js 后端
+        proxy_pass http://127.0.0.1:3000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection 'upgrade';
         proxy_set_header Host \$host;
         proxy_cache_bypass \$http_upgrade;
-        # 增加代理超时设置，防止后端响应慢导致连接关闭
         proxy_connect_timeout 600;
         proxy_send_timeout 600;
         proxy_read_timeout 600;
     }
     
     location / {
-        # 对于前端路由，将所有未找到的文件和目录的请求重定向到 index.html
         try_files \$uri \$uri/ /index.html; 
     }
 }
 EOF
-    # Test Nginx config again after applying full HTTPS config
     echo "--> 正在测试最终Nginx配置..."
     sudo nginx -t
     if [ $? -ne 0 ]; then
         echo -e "${RED}错误：最终Nginx配置测试失败！请手动检查 /etc/nginx/sites-available/${DOMAIN}${NC}"
         exit 1
     fi
-    sudo systemctl restart nginx # Restart Nginx to apply new full config
+    # Final Nginx restart to ensure all services are loaded correctly after full config
+    echo "--> 正在重启Nginx服务..."
+    sudo systemctl restart nginx
     # --- MODIFIED SECTION END ---
     
     # 5. 部署前端 (强制更新)
