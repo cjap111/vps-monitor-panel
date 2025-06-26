@@ -256,7 +256,7 @@ function checkAndResetTraffic() {
                 const lastResetYear = parseInt(parts[0], 10);
                 const lastResetMonth = parseInt(parts[1], 10) - 1; // 0-indexed month
                 // Assume it was reset at the configured time during that month.
-                lastResetDate = new Date(lastResetYear, lastResetMonth, server.resetDay, server.resetHour, server.resetMinute, 0);
+                lastResetDate = new Date(Date.UTC(lastResetYear, lastResetMonth, server.resetDay, server.resetHour, server.resetMinute, 0));
             }
             // Check for the new ISO string format.
             else if (!isNaN(new Date(server.lastReset).getTime())) {
@@ -264,24 +264,34 @@ function checkAndResetTraffic() {
             }
         }
 
-        // Calculate the reset date for the *current* cycle.
-        // This is the most recent reset date that *should have* occurred.
-        let resetDateThisCycle = new Date(nowInShanghai.getFullYear(), nowInShanghai.getMonth(), server.resetDay, server.resetHour, server.resetMinute, 0);
+        // --- CORRECTED LOGIC START ---
+        
+        // Get this month's reset date object in Shanghai time
+        let thisMonthResetDate = new Date(Date.UTC(nowInShanghai.getUTCFullYear(), nowInShanghai.getUTCMonth(), server.resetDay, server.resetHour, server.resetMinute, 0));
+        thisMonthResetDate = new Date(thisMonthResetDate.toLocaleString('en-US', { timeZone: 'Asia/Shanghai'}));
 
-        // If the current time is before this month's reset date, then the current cycle's target was last month's reset date.
-        if (nowInShanghai.getTime() < resetDateThisCycle.getTime()) {
-            resetDateThisCycle.setMonth(resetDateThisCycle.getMonth() - 1);
+
+        // Determine the start date of the current billing cycle.
+        let currentCycleStartDate;
+        if (nowInShanghai.getTime() >= thisMonthResetDate.getTime()) {
+            // If we are on or after this month's reset day, the cycle started this month.
+            currentCycleStartDate = thisMonthResetDate;
+        } else {
+            // If we are before this month's reset day, the cycle started last month.
+            let lastMonthResetDate = new Date(thisMonthResetDate.getTime());
+            lastMonthResetDate.setUTCMonth(lastMonthResetDate.getUTCMonth() - 1);
+            currentCycleStartDate = lastMonthResetDate;
         }
 
-        // A reset is needed if:
-        // 1. The current time is past the scheduled reset time for this cycle.
-        // 2. The last known reset was performed *before* this cycle's scheduled reset time.
-        if (nowInShanghai.getTime() >= resetDateThisCycle.getTime() && lastResetDate.getTime() < resetDateThisCycle.getTime()) {
-            console.log(`[${new Date().toISOString()}] RESETTING TRAFFIC for server ${id}. Current Time: ${nowInShanghai.toISOString()}, Scheduled Reset: ${resetDateThisCycle.toISOString()}, Last Reset: ${lastResetDate.toISOString()}`);
+        // A reset is needed if the last known reset was performed *before* the start of the current cycle.
+        if (lastResetDate.getTime() < currentCycleStartDate.getTime()) {
+            console.log(`[${new Date().toISOString()}] RESETTING TRAFFIC for server ${id}. Current Time: ${nowInShanghai.toISOString()}, Cycle Start: ${currentCycleStartDate.toISOString()}, Last Reset: ${lastResetDate.toISOString()}`);
             server.totalNet = { up: 0, down: 0 };
-            server.lastReset = resetDateThisCycle.toISOString(); // Store the precise reset timestamp.
+            // Record that the reset for the current cycle has been completed.
+            server.lastReset = currentCycleStartDate.toISOString(); 
             changed = true;
         }
+        // --- CORRECTED LOGIC END ---
     });
 
     if (changed) {
