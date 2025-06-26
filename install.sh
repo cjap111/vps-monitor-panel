@@ -2,7 +2,7 @@
 
 # =================================================================
 #
-#          一键式服务器监控面板安装/卸载/更新脚本 v2.0
+#          一键式服务器监控面板安装/卸载/更新脚本 v2.1
 #
 # =================================================================
 
@@ -10,12 +10,11 @@
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-# 修复: 修正了NC变量的转义，解决了乱码问题
 NC='\033[0m' # No Color
 
 # --- 脚本欢迎信息 ---
 echo -e "${GREEN}=====================================================${NC}"
-echo -e "${GREEN}      欢迎使用服务器监控面板一键安装/卸载/更新脚本V2.0      ${NC}"
+echo -e "${GREEN}      欢迎使用服务器监控面板一键安装/卸载/更新脚本V2.1      ${NC}"
 echo -e "${GREEN}=====================================================${NC}"
 echo ""
 
@@ -33,22 +32,25 @@ install_server() {
 
     echo "--> 正在检查并安装/更新依赖 (Nginx, Node.js, Certbot)..."
     dpkg -s nginx >/dev/null 2>&1 || sudo apt-get install -y nginx
-    # 检查Node.js版本，如果版本低于14.x则尝试安装更新的版本
+    
+    # 修复：更新Node.js到推荐的LTS版本 (20.x)
+    echo "--> 正在检查并安装 Node.js (推荐版本 20.x LTS)..."
     if command -v node &> /dev/null; then
         NODE_VERSION=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
-        if [ "$NODE_VERSION" -lt 14 ]; then
-            echo "--> 检测到Node.js版本较低 ($NODE_VERSION)，尝试安装新版本..."
+        if [ "$NODE_VERSION" -lt 20 ]; then
+            echo "--> 检测到Node.js版本较低 ($NODE_VERSION)，将尝试升级到 20.x..."
             sudo apt-get remove -y nodejs npm
-            curl -sL https://deb.nodesource.com/setup_16.x | sudo -E bash -
+            curl -sL https://deb.nodesource.com/setup_20.x | sudo -E bash -
             sudo apt-get install -y nodejs
         else
-            echo "--> Node.js 版本满足要求 (>=14.x)。"
+            echo "--> Node.js 版本满足要求 (>=20.x)。"
         fi
     else
-        echo "--> 未安装Node.js，正在安装..."
-        curl -sL https://deb.nodesource.com/setup_16.x | sudo -E bash -
+        echo "--> 未安装Node.js，正在安装 20.x LTS 版本..."
+        curl -sL https://deb.nodesource.com/setup_20.x | sudo -E bash -
         sudo apt-get install -y nodejs
     fi
+
     dpkg -s certbot >/dev/null 2>&1 || sudo apt-get install -y certbot python3-certbot-nginx
 
     if [ $? -ne 0 ]; then
@@ -56,14 +58,9 @@ install_server() {
         exit 1
     fi
 
-    # Set server timezone to Asia/Shanghai
+    # 设置服务器时区
     echo "--> 正在设置服务器时区为 Asia/Shanghai..."
-    sudo timedatectl set-timezone Asia/Shanghai
-    if [ $? -ne 0 ]; then
-        echo -e "${YELLOW}警告：设置时区失败。这可能不会影响核心功能，但日志时间可能不准确。${NC}"
-    else
-        echo -e "${GREEN}服务器时区已设置为 Asia/Shanghai。${NC}"
-    fi
+    sudo timedatectl set-timezone Asia/Shanghai || echo -e "${YELLOW}警告：设置时区失败。这可能不会影响核心功能。${NC}"
 
     # 2. 获取用户输入
     local BACKEND_ENV_FILE="/opt/monitor-backend/.env"
@@ -104,8 +101,8 @@ install_server() {
     sudo mkdir -p /var/www/monitor-frontend
     sudo curl -sL "https://raw.githubusercontent.com/cjap111/vps-monitor-panel/main/frontend/index.html" -o /var/www/monitor-frontend/index.html
 
-    # 4. 配置Nginx
-    echo "--> 正在配置Nginx..."
+    # 4. 配置Nginx进行HTTP验证
+    echo "--> 正在配置Nginx进行HTTP验证..."
     NGINX_CONF="/etc/nginx/sites-available/$DOMAIN"
     sudo tee "$NGINX_CONF" > /dev/null <<EOF
 server {
@@ -181,7 +178,6 @@ EOF
     echo "--> 正在部署/更新后端API服务..."
     sudo mkdir -p /opt/monitor-backend
     cd /opt/monitor-backend
-    # 注意：server_data.json 文件在更新时不会被删除，从而保留流量数据
     sudo curl -sL "https://raw.githubusercontent.com/cjap111/vps-monitor-panel/main/backend/server.js" -o server.js
     sudo curl -sL "https://raw.githubusercontent.com/cjap111/vps-monitor-panel/main/backend/package.json" -o package.json
     echo "--> 正在安装/更新后端依赖..."
@@ -226,7 +222,7 @@ EOF
     echo -e "${GREEN}=====================================================${NC}"
 }
 
-# --- Function: Install/Update Agent ---
+# --- 函数：安装/更新被控端 ---
 install_agent() {
     echo -e "${YELLOW}开始安装或更新被控端 (Agent)...${NC}"
 
