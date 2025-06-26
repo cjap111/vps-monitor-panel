@@ -5,6 +5,7 @@
 #          一键式服务器监控面板安装/卸载/更新脚本 v1.9
 #          修复了重新安装清除流量数据的问题和EOF错误
 #          并优化了SSL证书的自动配置和npm命令的执行
+#          增强了Node.js和npm的安装和路径检查
 #
 # =================================================================
 
@@ -34,16 +35,49 @@ install_server() {
 
     echo "--> 正在检查并安装/更新依赖 (Nginx, Node.js, Certbot)..."
     dpkg -s nginx >/dev/null 2>&1 || sudo apt-get install -y nginx
-    dpkg -s nodejs >/dev/null 2>&1 || sudo apt-get install -y nodejs
-    dpkg -s npm >/dev/null 2>&1 || sudo apt-get install -y npm
     dpkg -s certbot >/dev/null 2>&1 || sudo apt-get install -y certbot python3-certbot-nginx
 
+    # --- 增强 Node.js 和 npm 的安装和检查 ---
+    echo "--> 正在安装/更新 Node.js 和 npm..."
+    # Add NodeSource GPG key and repository if not already present
+    if [ ! -f /etc/apt/sources.list.d/nodesource.list ]; then
+        echo "    - 添加 NodeSource 仓库..."
+        curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+        if [ $? -ne 0 ]; then
+            echo -e "${RED}错误：无法添加 NodeSource 仓库。请检查您的网络连接或权限。${NC}"
+            exit 1
+        fi
+        sudo apt-get update
+    fi
+    
+    # Install nodejs (which includes npm)
+    dpkg -s nodejs >/dev/null 2>&1 || sudo apt-get install -y nodejs
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}错误：Node.js 安装失败。${NC}"
+        exit 1
+    fi
+    echo "    - Node.js 和 npm 安装完成。"
+
+    # Verify node and npm availability
+    NODE_PATH=$(command -v node)
+    NPM_PATH=$(command -v npm)
+
+    if [ -z "$NODE_PATH" ]; then
+        echo -e "${RED}错误：Node.js 命令 'node' 未在 PATH 中找到。请手动检查 Node.js 安装。${NC}"
+        exit 1
+    fi
+    if [ -z "$NPM_PATH" ]; then
+        echo -e "${RED}错误：npm 命令 'npm' 未在 PATH 中找到。请手动检查 npm 安装。${NC}"
+        exit 1
+    fi
+    
     # 检查Node.js版本，建议至少使用 Node.js 16
-    NODE_VERSION=$(node -v | cut -d 'v' -f 2 | cut -d '.' -f 1)
+    NODE_VERSION=$("$NODE_PATH" -v | cut -d 'v' -f 2 | cut -d '.' -f 1) # Use explicit path for node
     if (( NODE_VERSION < 16 )); then
         echo -e "${YELLOW}警告: 检测到 Node.js 版本为 v${NODE_VERSION}。建议升级到 v16 或更高版本以获得最佳兼容性。${NC}"
         echo -e "${YELLOW}您可以通过 NVM (Node Version Manager) 来管理 Node.js 版本。${NC}"
     fi
+    # --- 结束 Node.js 和 npm 的安装和检查 ---
 
     # 2. 获取前端/后端代码
     echo "--> 正在下载或更新前端和后端代码..."
@@ -150,12 +184,12 @@ EOF"
     sudo find "$BACKEND_DIR/" -maxdepth 1 -mindepth 1 ! -name 'server_data.json' -exec rm -rf {} +
 
     sudo cp -r "$TEMP_DIR/backend/"* "$BACKEND_DIR"
-    # 移除了多余的 cp 命令，因为 server.js 和 package.json 应该已经通过 cp -r "$TEMP_DIR/backend/"* "$BACKEND_DIR" 被正确复制。
     
     echo "    - 后端文件复制完成。"
 
     echo "--> 正在安装后端依赖..."
-    (cd "$BACKEND_DIR" && sudo /usr/bin/npm install) # 明确指定 npm 的完整路径
+    # 使用发现的 NPM_PATH
+    (cd "$BACKEND_DIR" && sudo "$NPM_PATH" install) 
     if [ $? -ne 0 ]; then
         echo -e "${RED}错误：后端依赖安装失败。请检查 npm 或网络连接。${NC}"
         exit 1
@@ -186,7 +220,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=$BACKEND_DIR
-ExecStart=/usr/bin/node server.js
+ExecStart=$NODE_PATH server.js # 使用 Node.js 的明确路径
 Restart=always
 RestartSec=10
 StandardOutput=syslog
@@ -221,15 +255,25 @@ install_agent() {
     BACKEND_DOMAIN="" # 用于Agent的后端域名
 
     # 检查是否存在已安装的服务端，尝试从Nginx配置中提取域名
-    if [ -f "/etc/nginx/sites-available/$DOMAIN_INPUT" ]; then
-        BACKEND_DOMAIN=$(grep "server_name" "/etc/nginx/sites-available/$DOMAIN_INPUT" | awk '{print $2}' | cut -d';' -f1)
-        if [ -z "$BACKEND_DOMAIN" ]; then
-             read -p "无法从Nginx配置中自动获取域名，请输入后端域名 (例如: monitor.yourdomain.com): " BACKEND_DOMAIN
-        else
-            echo "--> 自动检测到后端域名为: $BACKEND_DOMAIN"
+    # Ensure DOMAIN_INPUT is defined if install_server was not run
+    if [ -z "$DOMAIN_INPUT" ]; then
+        if [ -d "/etc/nginx/sites-enabled/" ]; then # Check if directory exists
+            # Attempt to find the domain from any enabled Nginx site
+            NGINX_ENABLED_CONF=$(ls /etc/nginx/sites-enabled/*.conf 2>/dev/null | head -n 1) # Added 2>/dev/null to suppress errors if no .conf files
+            if [ -n "$NGINX_ENABLED_CONF" ]; then
+                DOMAIN_INPUT=$(grep "server_name" "$NGINX_ENABLED_CONF" | awk '{print $2}' | cut -d';' -f1)
+                if [ -n "$DOMAIN_INPUT" ]; then
+                    echo "--> 自动检测到Nginx配置中的域名为: $DOMAIN_INPUT"
+                fi
+            fi
         fi
+    fi
+
+    if [ -n "$DOMAIN_INPUT" ]; then
+        BACKEND_DOMAIN="$DOMAIN_INPUT"
+        echo "--> 使用已配置的后端域名: $BACKEND_DOMAIN"
     else
-        read -p "请输入后端域名 (例如: monitor.yourdomain.com): " BACKEND_DOMAIN
+        read -p "无法从Nginx配置中自动获取域名，请输入后端域名 (例如: monitor.yourdomain.com): " BACKEND_DOMAIN
     fi
 
 
