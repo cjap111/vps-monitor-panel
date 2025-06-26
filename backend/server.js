@@ -230,14 +230,14 @@ app.post('/api/verify-agent-password', (req, res) => {
 
 /**
  * Traffic reset check function - Runs periodically to reset monthly traffic.
- * This function has been refactored for accuracy and reliability.
+ * This version uses a more robust method for handling dates and timezones.
  */
 function checkAndResetTraffic() {
     // Use 'Asia/Shanghai' timezone for all date calculations.
     const nowInShanghai = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
     let changed = false;
 
-    console.log(`[${new Date().toISOString()}] Running periodic traffic reset check. Current Shanghai Time: ${nowInShanghai.toISOString()}`);
+    console.log(`[${new Date().toISOString()}] Running periodic traffic reset check. Current Shanghai Time: ${nowInShanghai.toString()}`);
 
     Object.keys(serverDataStore).forEach(id => {
         const server = serverDataStore[id];
@@ -248,28 +248,18 @@ function checkAndResetTraffic() {
         }
 
         // Determine the last reset date.
-        let lastResetDate = new Date(0); // Default to epoch (a long time ago) if never reset.
-        if (server.lastReset) {
-            // Check for the old 'YYYY-M' format for backward compatibility.
-            if (typeof server.lastReset === 'string' && /^\d{4}-\d{1,2}$/.test(server.lastReset)) {
-                const parts = server.lastReset.split('-');
-                const lastResetYear = parseInt(parts[0], 10);
-                const lastResetMonth = parseInt(parts[1], 10) - 1; // 0-indexed month
-                // Assume it was reset at the configured time during that month.
-                lastResetDate = new Date(Date.UTC(lastResetYear, lastResetMonth, server.resetDay, server.resetHour, server.resetMinute, 0));
-            }
-            // Check for the new ISO string format.
-            else if (!isNaN(new Date(server.lastReset).getTime())) {
-                lastResetDate = new Date(server.lastReset);
-            }
+        let lastResetDate = new Date(0); // Default to epoch if never reset.
+        if (server.lastReset && !isNaN(new Date(server.lastReset).getTime())) {
+            lastResetDate = new Date(server.lastReset);
         }
 
-        // --- CORRECTED LOGIC START ---
-        
-        // Get this month's reset date object in Shanghai time
-        let thisMonthResetDate = new Date(Date.UTC(nowInShanghai.getUTCFullYear(), nowInShanghai.getUTCMonth(), server.resetDay, server.resetHour, server.resetMinute, 0));
-        thisMonthResetDate = new Date(thisMonthResetDate.toLocaleString('en-US', { timeZone: 'Asia/Shanghai'}));
+        // --- NEW, MORE ROBUST LOGIC ---
 
+        // Construct the reset date for the current month by directly setting components on a clone of the Shanghai time object.
+        // This avoids all timezone string parsing issues.
+        const thisMonthResetDate = new Date(nowInShanghai.getTime());
+        thisMonthResetDate.setDate(server.resetDay);
+        thisMonthResetDate.setHours(server.resetHour, server.resetMinute, 0, 0);
 
         // Determine the start date of the current billing cycle.
         let currentCycleStartDate;
@@ -278,20 +268,20 @@ function checkAndResetTraffic() {
             currentCycleStartDate = thisMonthResetDate;
         } else {
             // If we are before this month's reset day, the cycle started last month.
-            let lastMonthResetDate = new Date(thisMonthResetDate.getTime());
-            lastMonthResetDate.setUTCMonth(lastMonthResetDate.getUTCMonth() - 1);
+            const lastMonthResetDate = new Date(thisMonthResetDate.getTime());
+            // Setting the month will handle year rollovers automatically.
+            lastMonthResetDate.setMonth(lastMonthResetDate.getMonth() - 1);
             currentCycleStartDate = lastMonthResetDate;
         }
 
-        // A reset is needed if the last known reset was performed *before* the start of the current cycle.
+        // A reset is needed if the last known reset was performed *before* the start of the current billing cycle.
         if (lastResetDate.getTime() < currentCycleStartDate.getTime()) {
-            console.log(`[${new Date().toISOString()}] RESETTING TRAFFIC for server ${id}. Current Time: ${nowInShanghai.toISOString()}, Cycle Start: ${currentCycleStartDate.toISOString()}, Last Reset: ${lastResetDate.toISOString()}`);
+            console.log(`[${new Date().toISOString()}] RESETTING TRAFFIC for server ${id}. Current Time (SH): ${nowInShanghai.toString()}, Cycle Start: ${currentCycleStartDate.toString()}, Last Reset: ${lastResetDate.toString()}`);
             server.totalNet = { up: 0, down: 0 };
             // Record that the reset for the current cycle has been completed.
-            server.lastReset = currentCycleStartDate.toISOString(); 
+            server.lastReset = currentCycleStartDate.toISOString();
             changed = true;
         }
-        // --- CORRECTED LOGIC END ---
     });
 
     if (changed) {
