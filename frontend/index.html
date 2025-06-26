@@ -128,7 +128,7 @@
             </div>
 
             <div class="text-xs text-gray-400 flex items-center space-x-2">
-                <i data-lucide="ubuntu" class="w-4 h-4"></i>
+                <i data-lucide="server" class="w-4 h-4"></i> <!-- Changed from "ubuntu" to "server" -->
                 <span data-id="os">Ubuntu 22.04 LTS</span>
             </div>
 
@@ -164,7 +164,7 @@
                 </div>
                 <!-- Remaining traffic display -->
                 <div class="data-line pl-1 pt-1">
-                    <span class="label text-gray-300"><i data-lucide="data" class="w-3 h-3"></i><span data-id="remaining-traffic" class="font-mono">剩余 0 GB</span></span>
+                    <span class="label text-gray-300"><i data-lucide="data" class="w-3 h-3"></i><span class="font-mono">剩余 0 GB</span></span>
                 </div>
                  <!-- Expiration date display -->
                 <div class="data-line pl-1 pt-1">
@@ -461,6 +461,7 @@
 
             // Function to format uptime from seconds to human-readable string
             function formatUptime(totalSeconds) {
+                console.log('formatUptime received:', totalSeconds); // Debugging: log the received uptime seconds
                 if (totalSeconds === 0) return '离线或数据缺失';
 
                 const days = Math.floor(totalSeconds / (3600 * 24));
