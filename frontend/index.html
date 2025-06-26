@@ -1014,13 +1014,12 @@
                     } else {
                         detailExpirationInfo.textContent = '到期日期: 未设置';
                         detailExpirationInfo.classList.remove('text-orange-400', 'text-red-400', 'text-green-400');
-                        // BUG FIX: Changed 'expirationInfo' to 'detailExpirationInfo'
-                        detailExpirationInfo.classList.add('text-gray-400');
+                        expirationInfo.classList.add('text-gray-400');
                     }
                 }
             }
 
-            // Function to initialize charts in detail modal
+
             function initDetailCharts() {
                 const downloadCtx = document.getElementById('downloadChart').getContext('2d');
                 const uploadCtx = document.getElementById('uploadChart').getContext('2d');
@@ -1209,7 +1208,7 @@
                     });
 
                     if (response.ok) {
-                        showMessage('Success', 'Server deleted successfully!\nPlease note: To completely remove this server, please run the agent uninstallation command on the corresponding physical physical server.');
+                        showMessage('Success', 'Server deleted successfully!\\nPlease note: To completely remove this server, please run the agent uninstallation command on the corresponding physical physical server.');
                         if (deleteModal) deleteModal.style.display = 'none';
                         if (document.getElementById('deletePassword')) document.getElementById('deletePassword').value = '';
                         fetchAndRenderServers();
