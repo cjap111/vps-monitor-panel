@@ -80,6 +80,9 @@ NET_UP_BPS=$(echo "$NET_UP_KBPS * 1024" | bc || echo 0)
 RAW_TOTAL_NET_DOWN=$(cat /sys/class/net/$NET_INTERFACE/statistics/rx_bytes || echo 0)
 RAW_TOTAL_NET_UP=$(cat /sys/class/net/$NET_INTERFACE/statistics/tx_bytes || echo 0)
 
+# 获取系统在线时间 (秒)
+SYSTEM_UPTIME_SECONDS=$(awk -F. '{print $1}' /proc/uptime || echo 0)
+
 # --- 组装JSON数据 ---
 # 注意: JSON中不能使用#作为注释，已移除
 JSON_PAYLOAD=$(cat <<EOF
@@ -95,7 +98,8 @@ JSON_PAYLOAD=$(cat <<EOF
   "disk": { "total": $DISK_TOTAL, "used": $DISK_USED },
   "diskModel": "$DISK_MODEL",
   "net": { "up": $NET_UP_BPS, "down": $NET_DOWN_BPS },
-  "rawTotalNet": { "up": $RAW_TOTAL_NET_UP, "down": $RAW_TOTAL_NET_DOWN }
+  "rawTotalNet": { "up": $RAW_TOTAL_NET_UP, "down": $RAW_TOTAL_NET_UP },
+  "systemUptime": $SYSTEM_UPTIME_SECONDS
 }
 EOF
 )
