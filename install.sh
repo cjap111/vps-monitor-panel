@@ -185,18 +185,12 @@ EOF
     fi
     EMAIL="$EMAIL_TO_USE" # Set global EMAIL for the script to use
 
-    # Try to register the account explicitly first, if it's not already registered
-    # This step is crucial to handle "Unable to register an account"
+    # Attempt account registration/update using --update-registration
     echo "--> 尝试注册或更新Certbot账户..."
-    if ! sudo certbot register --email "$EMAIL" --agree-tos --non-interactive --no-eff-email; then
-        # Check if the error is due to an existing account
-        if sudo certbot accounts | grep -q "$EMAIL"; then
-            echo -e "${GREEN}Certbot账户已存在，继续。${NC}"
-        else
-            echo -e "${RED}错误：Certbot账户注册失败。请检查您的邮箱地址或网络连接。${NC}"
-            echo -e "如果问题持续存在，请访问Let's Encrypt社区获取帮助。"
-            exit 1
-        fi
+    if ! sudo certbot register --email "$EMAIL" --agree-tos --non-interactive --no-eff-email --update-registration; then
+        echo -e "${RED}错误：Certbot账户注册或更新失败。请检查您的邮箱地址或网络连接。${NC}"
+        echo -e "如果问题持续存在，请访问Let's Encrypt社区获取帮助。"
+        exit 1
     else
         echo -e "${GREEN}Certbot账户注册/更新成功！${NC}"
     fi
