@@ -1,3 +1,4 @@
+// server.js
 require('dotenv').config(); // Load environment variables at the top of the file
 const express = require('express');
 const cors = require('cors');
@@ -41,6 +42,28 @@ try {
             }
             if (serverDataStore[id].trafficCalculationMode === undefined) {
                 serverDataStore[id].trafficCalculationMode = 'bidirectional'; // Default to bidirectional
+            }
+            // Initialize new fields for precise reset time
+            if (serverDataStore[id].resetDay === undefined) {
+                serverDataStore[id].resetDay = 1; // Default to 1st day of month
+            }
+            if (serverDataStore[id].resetHour === undefined) {
+                serverDataStore[id].resetHour = 0; // Default to 00:00
+            }
+            if (serverDataStore[id].resetMinute === undefined) {
+                serverDataStore[id].resetMinute = 0; // Default to 00:00
+            }
+            // If lastReset was YYYY-M, convert it to a timestamp for consistency
+            if (typeof serverDataStore[id].lastReset === 'string' && serverDataStore[id].lastReset.includes('-')) {
+                const [year, month] = serverDataStore[id].lastReset.split('-').map(Number);
+                // Create a date object for the previous reset, using the stored resetDay/Hour/Minute
+                const prevResetDay = serverDataStore[id].resetDay || 1;
+                const prevResetHour = serverDataStore[id].resetHour || 0;
+                const prevResetMinute = serverDataStore[id].resetMinute || 0;
+                serverDataStore[id].lastReset = new Date(year, month - 1, prevResetDay, prevResetHour, prevResetMinute, 0, 0).getTime();
+                console.warn(`[${new Date().toISOString()}] Converted old lastReset string to timestamp for server ${id}.`);
+            } else if (serverDataStore[id].lastReset === undefined) {
+                serverDataStore[id].lastReset = 0; // Initialize as 0 or some past timestamp if not set
             }
         });
         saveData(); // Save updated structure if any initialization happened
@@ -98,7 +121,9 @@ app.post('/api/report', (req, res) => {
             rawTotalNet: { up: data.rawTotalNet ? data.rawTotalNet.up : 0, down: data.rawTotalNet ? data.rawTotalNet.down : 0 }, // Initialize with current raw data, handle potential undefined
             totalNet: { up: 0, down: 0 }, // Initialize accumulated total traffic
             resetDay: 1, // Default reset day
-            lastReset: `${new Date().getFullYear()}-${new Date().getMonth() + 1}`,
+            resetHour: 0, // Default reset hour (00:00)
+            resetMinute: 0, // Default reset minute (00:00)
+            lastReset: now, // Store timestamp of last reset for better accuracy
             startTime: now,
             lastUpdated: now,
             online: true,
@@ -124,6 +149,23 @@ app.post('/api/report', (req, res) => {
         }
         if (existingData.trafficCalculationMode === undefined) {
             existingData.trafficCalculationMode = 'bidirectional';
+        }
+        if (existingData.resetHour === undefined) {
+            existingData.resetHour = 0;
+        }
+        if (existingData.resetMinute === undefined) {
+            existingData.resetMinute = 0;
+        }
+        // If lastReset was YYYY-M, convert it to a timestamp for consistency
+        if (typeof existingData.lastReset === 'string' && existingData.lastReset.includes('-')) {
+            const [year, month] = existingData.lastReset.split('-').map(Number);
+            const prevResetDay = existingData.resetDay || 1;
+            const prevResetHour = existingData.resetHour || 0;
+            const prevResetMinute = existingData.resetMinute || 0;
+            existingData.lastReset = new Date(year, month - 1, prevResetDay, prevResetHour, prevResetMinute, 0, 0).getTime();
+            console.warn(`[${new Date().toISOString()}] Converted old lastReset string to timestamp for server ${id}.`);
+        } else if (existingData.lastReset === undefined) {
+            existingData.lastReset = 0; // Initialize as 0 or some past timestamp if not set
         }
     }
 
@@ -183,7 +225,7 @@ app.post('/api/report', (req, res) => {
         rawTotalNet: { up: data.rawTotalNet.up, down: data.rawTotalNet.down }, // Crucial: Update rawTotalNet for the next comparison
         lastUpdated: now, // Always update lastUpdated timestamp
         online: true, // Mark as online
-        // totalTrafficLimit and trafficCalculationMode are preserved from existingData or initialized above
+        // totalTrafficLimit, trafficCalculationMode, resetDay, resetHour, resetMinute are preserved from existingData or initialized above
     };
 
     saveData(); // Save data to file
@@ -206,10 +248,10 @@ app.get('/api/servers', (req, res) => {
 app.post('/api/servers/:id/settings', (req, res) => {
     const { id } = req.params;
     // Destructure new fields: totalTrafficLimit and trafficCalculationMode
-    const { totalNetUp, totalNetDown, resetDay, password, expirationDate, totalTrafficLimit, trafficCalculationMode } = req.body;
+    const { totalNetUp, totalNetDown, resetDay, resetHour, resetMinute, password, expirationDate, totalTrafficLimit, trafficCalculationMode } = req.body;
 
     console.log(`[${new Date().toISOString()}] Received settings update for server ID: ${id}`);
-    console.log(`[${new Date().toISOString()}] New settings: totalTrafficLimit=${totalTrafficLimit}, trafficCalculationMode=${trafficCalculationMode}`);
+    console.log(`[${new Date().toISOString()}] New settings: totalTrafficLimit=${totalTrafficLimit}, trafficCalculationMode=${trafficCalculationMode}, resetDay=${resetDay}, resetHour=${resetHour}, resetMinute=${resetMinute}`);
 
 
     // Validate agent installation password
@@ -222,6 +264,8 @@ app.post('/api/servers/:id/settings', (req, res) => {
         serverDataStore[id].totalNet.up = totalNetUp;
         serverDataStore[id].totalNet.down = totalNetDown;
         serverDataStore[id].resetDay = resetDay;
+        serverDataStore[id].resetHour = resetHour; // Save reset hour
+        serverDataStore[id].resetMinute = resetMinute; // Save reset minute
         serverDataStore[id].expirationDate = expirationDate; // Save expiration date
         // Save new traffic limit and calculation mode
         serverDataStore[id].totalTrafficLimit = totalTrafficLimit;
@@ -280,21 +324,45 @@ app.post('/api/verify-agent-password', (req, res) => {
 // Traffic reset check function - Runs hourly to reset monthly traffic
 function checkAndResetTraffic() {
     const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth(); // 0-indexed
     const currentDay = now.getDate();
-    // Use `YYYY-M` format
-    const currentMonthYear = `${now.getFullYear()}-${now.getMonth() + 1}`;
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+
     let changed = false;
 
-    console.log(`[${new Date().toISOString()}] Running daily traffic reset check...`);
+    console.log(`[${new Date().toISOString()}] Running hourly traffic reset check... Current time: ${String(currentYear).padStart(4, '0')}-${String(currentMonth + 1).padStart(2, '0')}-${String(currentDay).padStart(2, '0')} ${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`);
 
     Object.keys(serverDataStore).forEach(id => {
         const server = serverDataStore[id];
-        // Check if reset day is reached and not yet reset for the current month
-        if (server.resetDay === currentDay && server.lastReset !== currentMonthYear) {
-            console.log(`[${new Date().toISOString()}] Resetting traffic for server ${id}...`);
+
+        // Default values for reset if not set
+        const resetDay = server.resetDay !== undefined ? server.resetDay : 1;
+        const resetHour = server.resetHour !== undefined ? server.resetHour : 0;
+        const resetMinute = server.resetMinute !== undefined ? server.resetMinute : 0;
+
+        // Construct the target reset date for the current month
+        const targetResetDate = new Date(currentYear, currentMonth, resetDay, resetHour, resetMinute, 0, 0);
+
+        // Convert server.lastReset to a number (timestamp) for reliable comparison
+        const lastResetTimestamp = typeof server.lastReset === 'number' ? server.lastReset : 0;
+
+        // Condition for resetting:
+        // 1. Current time is at or after the target reset time for this month.
+        // 2. The server's lastReset timestamp is *before* the target reset time for this month.
+        // This handles cases where the server restarts or the check runs at slightly different times.
+        if (now.getTime() >= targetResetDate.getTime() && lastResetTimestamp < targetResetDate.getTime()) {
+            console.log(`[${new Date().toISOString()}] Resetting traffic for server ${id} (Target: ${targetResetDate.toISOString()})...`);
             server.totalNet = { up: 0, down: 0 };
-            server.lastReset = currentMonthYear;
+            server.lastReset = now.getTime(); // Update lastReset to current timestamp
             changed = true;
+        } else if (now.getTime() < targetResetDate.getTime()) {
+            // Log that we are waiting for the reset time if it's in the future
+            console.log(`[${new Date().toISOString()}] Server ${id}: Waiting for reset on ${resetDay}th ${String(resetHour).padStart(2, '0')}:${String(resetMinute).padStart(2, '0')}. Current lastReset: ${new Date(lastResetTimestamp).toISOString()}`);
+        } else {
+            // Log that reset has already occurred for this month or it's not the reset day/time yet
+            console.log(`[${new Date().toISOString()}] Server ${id}: Traffic already reset for this month, or not yet the reset day/time. Current lastReset: ${new Date(lastResetTimestamp).toISOString()}`);
         }
     });
 
@@ -308,7 +376,8 @@ function checkAndResetTraffic() {
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`[${new Date().toISOString()}] Monitor backend server running on http://0.0.0.0:${PORT}`);
     // Check for traffic reset hourly
-    setInterval(checkAndResetTraffic, 1000 * 60 * 60);
+    setInterval(checkAndResetTraffic, 1000 * 60 * 60); // Check every hour
     // Run check immediately on startup
     checkAndResetTraffic();
 });
+
