@@ -25,6 +25,25 @@ try {
         const data = fs.readFileSync(DB_FILE, 'utf8');
         serverDataStore = JSON.parse(data);
         console.log(`Data successfully loaded from ${DB_FILE}.`);
+        // Ensure old data has rawTotalNet and totalNet initialized correctly on load if missing
+        Object.keys(serverDataStore).forEach(id => {
+            if (!serverDataStore[id].rawTotalNet) {
+                serverDataStore[id].rawTotalNet = { up: 0, down: 0 };
+                console.warn(`[${new Date().toISOString()}] Initialized missing rawTotalNet for server ${id} on startup.`);
+            }
+            if (!serverDataStore[id].totalNet) {
+                serverDataStore[id].totalNet = { up: 0, down: 0 };
+                console.warn(`[${new Date().toISOString()}] Initialized missing totalNet for server ${id} on startup.`);
+            }
+            // Initialize new fields for traffic limit and calculation mode
+            if (serverDataStore[id].totalTrafficLimit === undefined) {
+                serverDataStore[id].totalTrafficLimit = 0; // Default to 0, meaning no limit set initially
+            }
+            if (serverDataStore[id].trafficCalculationMode === undefined) {
+                serverDataStore[id].trafficCalculationMode = 'bidirectional'; // Default to bidirectional
+            }
+        });
+        saveData(); // Save updated structure if any initialization happened
     }
 } catch (err) {
     console.error("Error loading data from file:", err);
@@ -54,77 +73,131 @@ app.get('/', (req, res) => {
 
 // POST /api/report - Receive monitoring data from agents
 app.post('/api/report', (req, res) => {
-    console.log(`[${new Date().toISOString()}] Received report from server ID: ${req.body.id}`); // Added log for incoming reports
     const data = req.body;
+    console.log(`[${new Date().toISOString()}] Received report from server ID: ${data.id}`);
+
     if (!data.id) {
-        console.error(`[${new Date().toISOString()}] Error: Server ID is required for report.`); // Added error log
+        console.error(`[${new Date().toISOString()}] Error: Server ID is required for report.`);
         return res.status(400).send('Server ID is required.');
     }
 
     const now = Date.now();
-    const existingData = serverDataStore[data.id];
+    let existingData = serverDataStore[data.id];
 
+    // Initialize server data if it's a new server or core data structures are missing
     if (!existingData) {
-        // First report for a new server
-        const now_date = new Date();
-        serverDataStore[data.id] = {
-            ...data,
-            totalNet: { up: 0, down: 0 },
-            resetDay: 1,
-            // Record last reset month in `YYYY-M` format
-            lastReset: `${now_date.getFullYear()}-${now_date.getMonth() + 1}`, 
+        existingData = {
+            id: data.id,
+            name: data.name,
+            location: data.location,
+            os: data.os,
+            cpu: data.cpu,
+            mem: data.mem,
+            disk: data.disk,
+            net: data.net, // Current network speed
+            rawTotalNet: { up: data.rawTotalNet ? data.rawTotalNet.up : 0, down: data.rawTotalNet ? data.rawTotalNet.down : 0 }, // Initialize with current raw data, handle potential undefined
+            totalNet: { up: 0, down: 0 }, // Initialize accumulated total traffic
+            resetDay: 1, // Default reset day
+            lastReset: `${new Date().getFullYear()}-${new Date().getMonth() + 1}`,
             startTime: now,
             lastUpdated: now,
             online: true,
-            expirationDate: null, // Initialize expiration date for new server
-            cpuModel: data.cpuModel || null, // Initialize cpuModel for new server
-            memModel: data.memModel || null, // Initialize memModel for new server
-            diskModel: data.diskModel || null // Initialize diskModel for new server
+            expirationDate: null,
+            cpuModel: data.cpuModel || null,
+            memModel: data.memModel || null,
+            diskModel: data.diskModel || null,
+            totalTrafficLimit: 0, // Initialize new field for total traffic limit
+            trafficCalculationMode: 'bidirectional' // Initialize new field for calculation mode
         };
-        console.log(`[${new Date().toISOString()}] New server ${data.id} added.`); // Log new server addition
+        console.log(`[${new Date().toISOString()}] New server ${data.id} added.`);
     } else {
-        // Update data for existing server
-        let upBytesSinceLast = 0;
-        let downBytesSinceLast = 0;
-        
-        // Robustness check: ensure rawTotalNet exists and values are increasing (prevents agent reboot resetting count)
-        if (existingData.rawTotalNet && data.rawTotalNet.up >= existingData.rawTotalNet.up) {
-            upBytesSinceLast = data.rawTotalNet.up - existingData.rawTotalNet.up;
+        // Ensure existing data has rawTotalNet and totalNet for calculations
+        if (!existingData.rawTotalNet) {
+            existingData.rawTotalNet = { up: 0, down: 0 };
         }
-        if (existingData.rawTotalNet && data.rawTotalNet.down >= existingData.rawTotalNet.down) {
-            downBytesSinceLast = data.rawTotalNet.down - existingData.rawTotalNet.down;
+        if (!existingData.totalNet) {
+            existingData.totalNet = { up: 0, down: 0 };
         }
-        
-        existingData.totalNet.up += upBytesSinceLast;
-        existingData.totalNet.down += downBytesSinceLast;
-
-        // Merge new and old data
-        serverDataStore[data.id] = {
-            ...existingData, // Preserve old settings like totalNet, resetDay, expirationDate etc.
-            ...data,         // Overwrite with latest dynamic data from agent report
-            totalNet: existingData.totalNet, // Ensure totalNet is not overwritten
-            expirationDate: existingData.expirationDate, // Ensure expirationDate is not overwritten by agent data
-            cpuModel: data.cpuModel || existingData.cpuModel, // Ensure cpuModel is updated if provided, otherwise preserved
-            memModel: data.memModel || existingData.memModel, // Ensure memModel is updated if provided, otherwise preserved
-            diskModel: data.diskModel || existingData.diskModel, // Ensure diskModel is updated if provided, otherwise preserved
-            lastUpdated: now,
-            online: true
-        };
-        console.log(`[${new Date().toISOString()}] Server ${data.id} updated.`); // Log server update
+        // Ensure new fields are present for existing servers loaded from file
+        if (existingData.totalTrafficLimit === undefined) {
+            existingData.totalTrafficLimit = 0;
+        }
+        if (existingData.trafficCalculationMode === undefined) {
+            existingData.trafficCalculationMode = 'bidirectional';
+        }
     }
 
-    saveData(); // Save data
+    let upBytesSinceLast = 0;
+    let downBytesSinceLast = 0;
+
+    // Log raw counters before calculation for debugging
+    console.log(`[${new Date().toISOString()}] Server ${data.id} - Raw Traffic Incoming: Up=${data.rawTotalNet.up}, Down=${data.rawTotalNet.down}`);
+    console.log(`[${new Date().toISOString()}] Server ${data.id} - Raw Traffic Existing: Up=${existingData.rawTotalNet.up}, Down=${existingData.rawTotalNet.down}`);
+
+    // Traffic calculation logic for accumulated data:
+    // If current raw counter is less than last known raw counter, assume agent reset/reboot.
+    // In this case, the current raw counter represents the traffic since the reboot,
+    // so we add the current raw value as the increment for this specific interval.
+    if (data.rawTotalNet.up < existingData.rawTotalNet.up) {
+        console.warn(`[${new Date().toISOString()}] Server ${data.id}: Upload raw counter reset detected. Adding current reported raw value as increment.`);
+        upBytesSinceLast = data.rawTotalNet.up;
+    } else {
+        upBytesSinceLast = data.rawTotalNet.up - existingData.rawTotalNet.up;
+    }
+
+    if (data.rawTotalNet.down < existingData.rawTotalNet.down) {
+        console.warn(`[${new Date().toISOString()}] Server ${data.id}: Download raw counter reset detected. Adding current reported raw value as increment.`);
+        downBytesSinceLast = data.rawTotalNet.down;
+    } else {
+        downBytesSinceLast = data.rawTotalNet.down - existingData.rawTotalNet.down;
+    }
+
+    // Ensure increments are non-negative (traffic should not decrease)
+    upBytesSinceLast = Math.max(0, upBytesSinceLast);
+    downBytesSinceLast = Math.max(0, downBytesSinceLast);
+
+    // Add increments to total traffic
+    existingData.totalNet.up += upBytesSinceLast;
+    existingData.totalNet.down += downBytesSinceLast;
+
+    // Log increments and new total for debugging
+    console.log(`[${new Date().toISOString()}] Server ${data.id} - Increments: Up=${upBytesSinceLast}, Down=${downBytesSinceLast}`);
+    console.log(`[${new Date().toISOString()}] Server ${data.id} - New Total Traffic: Up=${existingData.totalNet.up}, Down=${existingData.totalNet.down}`);
+
+
+    // Update serverDataStore with all latest information
+    serverDataStore[data.id] = {
+        ...existingData, // Preserve existing accumulated data and settings
+        id: data.id, // Explicitly set ID
+        name: data.name, // Update these fields from agent data
+        location: data.location,
+        os: data.os,
+        cpu: data.cpu,
+        mem: data.mem,
+        disk: data.disk,
+        net: data.net, // Current network speed
+        cpuModel: data.cpuModel || existingData.cpuModel, // Update if new, preserve if not
+        memModel: data.memModel || existingData.memModel, // Update if new, preserve if not
+        diskModel: data.diskModel || existingData.diskModel, // Update if new, preserve if not
+        totalNet: existingData.totalNet, // Explicitly keep the updated totalNet
+        rawTotalNet: { up: data.rawTotalNet.up, down: data.rawTotalNet.down }, // Crucial: Update rawTotalNet for the next comparison
+        lastUpdated: now, // Always update lastUpdated timestamp
+        online: true, // Mark as online
+        // totalTrafficLimit and trafficCalculationMode are preserved from existingData or initialized above
+    };
+
+    saveData(); // Save data to file
     res.status(200).send('Report received.');
 });
 
 // GET /api/servers - Get all server data for the frontend
 app.get('/api/servers', (req, res) => {
-    console.log(`[${new Date().toISOString()}] Request received for server list.`); // Added log for server list requests
+    console.log(`[${new Date().toISOString()}] Request received for server list.`);
     const now = Date.now();
-    // Check online status for all servers
+    // Check online status for all servers - adjusted to 15 seconds threshold for 1-second reporting for better tolerance
     Object.values(serverDataStore).forEach(server => {
-        // If no update for more than 30 seconds, consider offline
-        server.online = (now - server.lastUpdated) < 30000; 
+        // If no update for more than 15 seconds, consider offline
+        server.online = (now - server.lastUpdated) < 15000;
     });
     res.json(Object.values(serverDataStore));
 });
@@ -132,13 +205,16 @@ app.get('/api/servers', (req, res) => {
 // POST /api/servers/:id/settings - Update server settings (requires agent installation password)
 app.post('/api/servers/:id/settings', (req, res) => {
     const { id } = req.params;
-    const { totalNetUp, totalNetDown, resetDay, password, expirationDate } = req.body; // Add password and expirationDate
-    
-    console.log(`[${new Date().toISOString()}] Received settings update for server ID: ${id}`); // Added log for settings updates
+    // Destructure new fields: totalTrafficLimit and trafficCalculationMode
+    const { totalNetUp, totalNetDown, resetDay, password, expirationDate, totalTrafficLimit, trafficCalculationMode } = req.body;
+
+    console.log(`[${new Date().toISOString()}] Received settings update for server ID: ${id}`);
+    console.log(`[${new Date().toISOString()}] New settings: totalTrafficLimit=${totalTrafficLimit}, trafficCalculationMode=${trafficCalculationMode}`);
+
 
     // Validate agent installation password
     if (!password || password !== AGENT_INSTALL_PASSWORD) {
-        console.error(`[${new Date().toISOString()}] Invalid agent installation password for server ${id} settings.`); // Added error log
+        console.error(`[${new Date().toISOString()}] Invalid agent installation password for server ${id} settings.`);
         return res.status(403).send('Incorrect agent installation password.');
     }
 
@@ -147,12 +223,16 @@ app.post('/api/servers/:id/settings', (req, res) => {
         serverDataStore[id].totalNet.down = totalNetDown;
         serverDataStore[id].resetDay = resetDay;
         serverDataStore[id].expirationDate = expirationDate; // Save expiration date
-        // Note: cpuModel, memModel, diskModel are not updated via settings route, they are only updated by agent reports.
+        // Save new traffic limit and calculation mode
+        serverDataStore[id].totalTrafficLimit = totalTrafficLimit;
+        serverDataStore[id].trafficCalculationMode = trafficCalculationMode;
+
+        // Note: cpuModel, memModel, diskModel, rawTotalNet are not updated via settings route, they are only updated by agent reports.
         saveData(); // Save data
-        console.log(`[${new Date().toISOString()}] Server ${id} settings updated successfully.`); // Log success
+        console.log(`[${new Date().toISOString()}] Server ${id} settings updated successfully.`);
         res.status(200).send('Settings updated successfully.');
     } else {
-        console.error(`[${new Date().toISOString()}] Server ${id} not found for settings update.`); // Added error log
+        console.error(`[${new Date().toISOString()}] Server ${id} not found for settings update.`);
         res.status(404).send('Server not found.');
     }
 });
@@ -162,24 +242,24 @@ app.delete('/api/servers/:id', (req, res) => {
     const { id } = req.params;
     const { password } = req.body;
 
-    console.log(`[${new Date().toISOString()}] Received delete request for server ID: ${id}`); // Added log for delete requests
+    console.log(`[${new Date().toISOString()}] Received delete request for server ID: ${id}`);
 
     if (!password) {
-        console.error(`[${new Date().toISOString()}] Password required for deleting server ${id}.`); // Added error log
+        console.error(`[${new Date().toISOString()}] Password required for deleting server ${id}.`);
         return res.status(400).send('Password required.');
     }
     if (password !== DELETE_PASSWORD) {
-        console.error(`[${new Date().toISOString()}] Incorrect password for deleting server ${id}.`); // Added error log
+        console.error(`[${new Date().toISOString()}] Incorrect password for deleting server ${id}.`);
         return res.status(403).send('Incorrect password.');
     }
 
     if (serverDataStore[id]) {
         delete serverDataStore[id];
         saveData(); // Save data
-        console.log(`[${new Date().toISOString()}] Server ${id} deleted.`); // Log success
+        console.log(`[${new Date().toISOString()}] Server ${id} deleted.`);
         res.status(200).send('Server deleted successfully.');
     } else {
-        console.error(`[${new Date().toISOString()}] Server ${id} not found for deletion.`); // Added error log
+        console.error(`[${new Date().toISOString()}] Server ${id} not found for deletion.`);
         res.status(404).send('Server not found.');
     }
 });
@@ -187,13 +267,13 @@ app.delete('/api/servers/:id', (req, res) => {
 // POST /api/verify-agent-password - Verify the agent installation password
 app.post('/api/verify-agent-password', (req, res) => {
     const { password } = req.body;
-    console.log(`[${new Date().toISOString()}] Received agent password verification request.`); // Added log
+    console.log(`[${new Date().toISOString()}] Received agent password verification request.`);
     if (password && password === AGENT_INSTALL_PASSWORD) {
         res.status(200).send('Agent installation password correct.');
-        console.log(`[${new Date().toISOString()}] Agent installation password verified successfully.`); // Log success
+        console.log(`[${new Date().toISOString()}] Agent installation password verified successfully.`);
     } else {
         res.status(403).send('Invalid agent installation password.');
-        console.warn(`[${new Date().toISOString()}] Invalid agent installation password provided.`); // Log warning
+        console.warn(`[${new Date().toISOString()}] Invalid agent installation password provided.`);
     }
 });
 
@@ -225,10 +305,10 @@ function checkAndResetTraffic() {
 }
 
 // Start the server and set up hourly traffic reset check
-app.listen(PORT, '0.0.0.0', () => { 
-    console.log(`[${new Date().toISOString()}] Monitor backend server running on http://0.0.0.0:${PORT}`); 
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`[${new Date().toISOString()}] Monitor backend server running on http://0.0.0.0:${PORT}`);
     // Check for traffic reset hourly
-    setInterval(checkAndResetTraffic, 1000 * 60 * 60); 
+    setInterval(checkAndResetTraffic, 1000 * 60 * 60);
     // Run check immediately on startup
     checkAndResetTraffic();
 });
