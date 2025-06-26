@@ -14,7 +14,7 @@ NC='\033[0m' # No Color
 
 # --- 脚本欢迎信息 ---
 echo -e "${GREEN}=====================================================${NC}"
-echo -e "${GREEN}      欢迎使用服务器监控面板一键安装/卸载/更新脚本V1.7      ${NC}"
+echo -e "${GREEN}      欢迎使用服务器监控面板一键安装/卸载/更新脚本      ${NC}"
 echo -e "${GREEN}=====================================================${NC}"
 echo ""
 
@@ -53,7 +53,8 @@ install_server() {
         OLD_DOMAIN_FROM_ENV=$(grep "^DOMAIN=" "$BACKEND_ENV_FILE" 2>/dev/null | cut -d= -f2)
         CURRENT_DEL_PASSWORD=$(grep "^DELETE_PASSWORD=" "$BACKEND_ENV_FILE" 2>/dev/null | cut -d= -f2)
         CURRENT_AGENT_PASSWORD=$(grep "^AGENT_INSTALL_PASSWORD=" "$BACKEND_ENV_FILE" 2>/dev/null | cut -d= -f2)
-        OLD_EMAIL=$(grep "^CERTBOT_EMAIL=" "$BACKEND_ENV_FILE" 2>/dev/null | cut -d= -f2)
+        # MODIFIED: Extract email and strip comments from OLD_EMAIL
+        OLD_EMAIL=$(grep "^CERTBOT_EMAIL=" "$BACKEND_ENV_FILE" 2>/dev/null | cut -d= -f2 | cut -d'#' -f1 | xargs)
         ENV_FILE_EXISTS=true
     fi
 
@@ -188,6 +189,7 @@ EOF
 
     # Run Certbot to obtain certificate and modify Nginx config for HTTPS
     # Adding --redirect here to let Certbot handle the HTTP to HTTPS redirect
+    # Removed the trailing comment from EMAIL variable in the certbot command to prevent invalid email error.
     sudo certbot --nginx --agree-tos --non-interactive --redirect --cert-name "$DOMAIN" --deploy-hook "systemctl reload nginx" -m "$EMAIL" -d "$DOMAIN"
     if [ $? -ne 0 ]; then
         echo -e "${RED}错误：Certbot获取/续订证书失败！请检查域名解析、防火墙及Certbot日志。${NC}"
@@ -269,11 +271,12 @@ EOF
 
     # 7. 创建或更新环境变量文件
     echo "--> 正在配置/更新后端环境变量..."
+    # MODIFIED: Ensure CERTBOT_EMAIL is written without comments to the .env file
     sudo tee "$BACKEND_ENV_FILE" > /dev/null <<EOF
 DELETE_PASSWORD=$DEL_PASSWORD
 AGENT_INSTALL_PASSWORD=$AGENT_PASSWORD
 DOMAIN=$DOMAIN # 显式保存域名到 .env 文件
-${EMAIL:+CERTBOT_EMAIL=$EMAIL} # 如果邮箱已设置，则保存到 .env
+${EMAIL:+CERTBOT_EMAIL=$EMAIL}
 EOF
 
     # 8. 创建或更新Systemd服务
