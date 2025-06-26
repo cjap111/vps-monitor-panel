@@ -2,7 +2,7 @@
 
 # =================================================================
 #
-#          一键式服务器监控面板安装/卸载/更新脚本 v1.8 (定制版)
+#          一键式服务器监控面板安装/卸载/更新脚本 v1.9 (定制版)
 #
 # =================================================================
 
@@ -38,6 +38,15 @@ install_server() {
     if [ $? -ne 0 ]; then
         echo -e "${RED}错误：依赖安装失败。请查看上面的错误信息来诊断问题。${NC}"
         exit 1
+    fi
+
+    # Set server timezone to Asia/Shanghai
+    echo "--> 正在设置服务器时区为 Asia/Shanghai..."
+    sudo timedatectl set-timezone Asia/Shanghai
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}错误：设置时区失败。请手动检查并设置，或确保 timedatectl 命令可用。${NC}"
+    else
+        echo -e "${GREEN}服务器时区已设置为 Asia/Shanghai。${NC}"
     fi
 
     # 2. 获取用户输入 (如果是更新，尝试读取旧配置，否则提示输入)
@@ -271,7 +280,7 @@ EOF
     fi
     sudo systemctl restart nginx # Final restart to pick up HTTPS config
     
-    # 7. 部署后端 (强制更新)
+    # 7. Deploy Backend (forced update)
     echo "--> 正在部署/更新后端API服务..."
     sudo mkdir -p /opt/monitor-backend
     cd /opt/monitor-backend
@@ -280,16 +289,16 @@ EOF
     echo "--> 正在安装/更新后端依赖..."
     sudo npm install
 
-    # 8. 创建或更新环境变量文件
+    # 8. Create or update environment file
     echo "--> 正在配置/更新后端环境变量..."
     sudo tee "$BACKEND_ENV_FILE" > /dev/null <<EOF
 DELETE_PASSWORD=$DEL_PASSWORD
 AGENT_INSTALL_PASSWORD=$AGENT_PASSWORD
-DOMAIN=$DOMAIN # 显式保存域名到 .env 文件
-${EMAIL:+CERTBOT_EMAIL=$EMAIL} # 如果邮箱已设置，则保存到 .env
+DOMAIN=$DOMAIN # Explicitly save domain to .env file
+${EMAIL:+CERTBOT_EMAIL=$EMAIL} # If email is set, save to .env
 EOF
 
-    # 9. 创建或更新Systemd服务
+    # 9. Create or update Systemd service
     echo "--> 正在创建/更新后台运行服务..."
     sudo tee /etc/systemd/system/monitor-backend.service > /dev/null <<EOF
 [Unit]
@@ -319,7 +328,7 @@ EOF
     echo -e "${GREEN}=====================================================${NC}"
 }
 
-# --- 函数：安装/更新被控端 (Agent) ---
+# --- Function: Install/Update Agent ---
 install_agent() {
     echo -e "${YELLOW}开始安装或更新被控端 (Agent)...${NC}"
 
@@ -335,19 +344,19 @@ install_agent() {
     if [ -f "$AGENT_PATH" ] && [ -f "$AGENT_SERVICE_PATH" ]; then
         IS_UPDATE=true
         echo "--> 检测到现有Agent安装，将进行更新操作。"
-        # 停止服务以避免冲突
+        # Stop service to avoid conflicts
         echo "--> 正在停止现有Agent服务..."
         sudo systemctl stop monitor-agent.service > /dev/null 2>&1
         sudo systemctl disable monitor-agent.service > /dev/null 2>&1
         
-        # 尝试从旧脚本中读取配置，并抑制grep的错误输出
+        # Try to read configuration from old script, suppress grep errors
         OLD_BACKEND_URL=$(grep "BACKEND_URL=" "$AGENT_PATH" 2>/dev/null | cut -d\" -f2)
         OLD_SERVER_ID=$(grep "SERVER_ID=" "$AGENT_PATH" 2>/dev/null | cut -d\" -f2)
         OLD_SERVER_NAME=$(grep "SERVER_NAME=" "$AGENT_PATH" 2>/dev/null | cut -d\" -f2)
         OLD_SERVER_LOCATION=$(grep "SERVER_LOCATION=" "$AGENT_PATH" 2>/dev/null | cut -d\" -f2)
         OLD_NET_INTERFACE=$(grep "NET_INTERFACE=" "$AGENT_PATH" 2>/dev/null | cut -d\" -f2)
 
-        # 从完整 URL 中提取域名
+        # Extract domain from full URL
         OLD_BACKEND_DOMAIN=$(echo "$OLD_BACKEND_URL" | sed 's#/api/report##')
 
         if [ -n "$OLD_BACKEND_DOMAIN" ]; then
@@ -361,7 +370,7 @@ install_agent() {
         fi
     fi
 
-    # 1. 获取用户输入
+    # 1. Get user input
     local BACKEND_DOMAIN_INPUT=""
     if [ -n "$OLD_BACKEND_DOMAIN" ]; then
         read -p "检测到旧的后端API域名: ${OLD_BACKEND_DOMAIN}。是否继续使用此域名? (y/N): " USE_OLD_BACKEND_DOMAIN
@@ -383,7 +392,7 @@ install_agent() {
     read -s -p "请输入【被控端安装密码】: " AGENT_INSTALL_PASSWORD_INPUT
     echo ""
     
-    # 2. 验证密码
+    # 2. Verify password
     echo "--> 正在验证安装密码..."
     VERIFY_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST -H "Content-Type: application/json" -d "{\"password\":\"$AGENT_INSTALL_PASSWORD_INPUT\"}" "$BACKEND_DOMAIN/api/verify-agent-password")
     
@@ -393,7 +402,7 @@ install_agent() {
     fi
     echo -e "${GREEN}密码验证成功！正在继续安装/更新...${NC}"
 
-    # 3. 安装依赖
+    # 3. Install dependencies
     echo "--> 正在检查并安装/更新依赖 (sysstat, bc)..."
     dpkg -s sysstat >/dev/null 2>&1 || sudo apt-get install -y sysstat
     dpkg -s bc >/dev/null 2>&1 || sudo apt-get install -y bc
@@ -402,7 +411,7 @@ install_agent() {
         exit 1
     fi
 
-    # 4. 获取服务器信息
+    # 4. Get server information
     local SERVER_ID_INPUT="$OLD_SERVER_ID"
     local SERVER_NAME_INPUT="$OLD_SERVER_NAME"
     local SERVER_LOCATION_INPUT="$OLD_SERVER_LOCATION"
@@ -443,20 +452,20 @@ install_agent() {
     NET_INTERFACE=$(ip -o -4 route show to default | awk '{print $5}')
     echo "--> 自动检测到网络接口为: $NET_INTERFACE"
 
-    # 5. 部署Agent脚本 (强制更新)
+    # 5. Deploy Agent Script (forced update)
     echo "--> 正在部署/更新Agent脚本..."
     sudo mkdir -p /opt/monitor-agent
     sudo curl -s -L "https://raw.githubusercontent.com/cjap111/vps-monitor-panel/main/agent/agent.sh" -o /opt/monitor-agent/agent.sh
     sudo chmod +x /opt/monitor-agent/agent.sh
 
-    # 6. 更新Agent配置
+    # 6. Update Agent Configuration
     sudo sed -i "s|BACKEND_URL=.*|BACKEND_URL=\"$BACKEND_DOMAIN/api/report\"|g" /opt/monitor-agent/agent.sh
     sudo sed -i "s|SERVER_ID=.*|SERVER_ID=\"$SERVER_ID_INPUT\"|g" /opt/monitor-agent/agent.sh
     sudo sed -i "s|SERVER_NAME=.*|SERVER_NAME=\"$SERVER_NAME_INPUT\"|g" /opt/monitor-agent/agent.sh
     sudo sed -i "s|SERVER_LOCATION=.*|SERVER_LOCATION=\"$SERVER_LOCATION_INPUT\"|g" /opt/monitor-agent/agent.sh
     sudo sed -i "s|NET_INTERFACE=.*|NET_INTERFACE=\"$NET_INTERFACE\"|g" /opt/monitor-agent/agent.sh
     
-    # 7. 创建或更新Systemd服务
+    # 7. Create or update Systemd service
     echo "--> 正在创建/更新后台上报服务..."
     sudo tee /etc/systemd/system/monitor-agent.service > /dev/null <<EOF
 [Unit]
@@ -481,7 +490,7 @@ EOF
     echo -e "${GREEN}=====================================================${NC}"
 }
 
-# --- 函数：卸载服务端 ---
+# --- Function: Uninstall Server ---
 uninstall_server() {
     echo -e "${YELLOW}开始卸载服务端...${NC}"
     read -p "请输入您安装时使用的域名 (例如: monitor.yourdomain.com): " DOMAIN
@@ -497,31 +506,31 @@ uninstall_server() {
         exit 0
     fi
 
-    # 1. 停止并禁用后端服务
+    # 1. Stop and disable backend service
     echo "--> 正在停止并禁用后端服务..."
     sudo systemctl stop monitor-backend.service > /dev/null 2>&1
     sudo systemctl disable monitor-backend.service > /dev/null 2>&1
     
-    # 2. 删除后端文件和服务文件
+    # 2. Delete backend files and service file
     echo "--> 正在删除后端文件..."
     sudo rm -rf /opt/monitor-backend
     sudo rm -f /etc/systemd/system/monitor-backend.service
     
-    # 3. 停止Nginx
+    # 3. Stop Nginx
     echo "--> 正在停止Nginx..."
     sudo systemctl stop nginx > /dev/null 2>&1
     
-    # 4. 删除Nginx配置
+    # 4. Delete Nginx configuration
     echo "--> 正在删除Nginx配置..."
     sudo rm -f "/etc/nginx/sites-available/$DOMAIN"
     sudo rm -f "/etc/nginx/sites-enabled/$DOMAIN"
     
-    # 5. 删除前端文件
+    # 5. Delete frontend files
     echo "--> 正在删除前端文件..."
     sudo rm -rf /var/www/monitor-frontend
     sudo rm -rf /var/www/certbot # Remove certbot webroot directory
 
-    # 6. 重载Systemd并重启Nginx
+    # 6. Reload Systemd and restart Nginx
     echo "--> 正在重载服务并重启Nginx..."
     sudo systemctl daemon-reload
     sudo systemctl restart nginx
@@ -532,7 +541,7 @@ uninstall_server() {
     echo -e "${GREEN}=====================================================${NC}"
 }
 
-# --- 函数：卸载被控端 ---
+# --- Function: Uninstall Agent ---
 uninstall_agent() {
     echo -e "${YELLOW}开始卸载被控端...${NC}"
     echo -e "${RED}警告：此操作将停止并删除本服务器上的监控Agent。${NC}"
@@ -542,17 +551,17 @@ uninstall_agent() {
         exit 0
     fi
 
-    # 1. 停止并禁用Agent服务
+    # 1. Stop and disable Agent service
     echo "--> 正在停止并禁用Agent服务..."
     sudo systemctl stop monitor-agent.service > /dev/null 2>&1
     sudo systemctl disable monitor-agent.service > /dev/null 2>&1
     
-    # 2. 删除Agent文件和服务文件
+    # 2. Delete Agent files and service file
     echo "--> 正在删除Agent文件..."
     sudo rm -rf /opt/monitor-agent
     sudo rm -f /etc/systemd/system/monitor-agent.service
     
-    # 3. 重载Systemd
+    # 3. Reload Systemd
     echo "--> 正在重载服务...约5秒后完成"
     sudo systemctl daemon-reload
     
@@ -562,7 +571,7 @@ uninstall_agent() {
     echo -e "${GREEN}=====================================================${NC}"
 }
 
-# --- 主菜单 ---
+# --- Main Menu ---
 echo "请选择要执行的操作: (再次运行本脚本即可安装或更新)"
 echo "1) 安装/更新服务端 (Frontend + Backend)"
 echo "2) 安装/更新被控端 (Agent)"
