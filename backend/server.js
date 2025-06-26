@@ -46,10 +46,14 @@ try {
             if (serverDataStore[id].systemUptime === undefined) {
                 serverDataStore[id].systemUptime = 0; // Default to 0 seconds
             }
-            // New: Initialize resetHour if missing
+            // New: Initialize resetHour and resetMinute if missing
             if (serverDataStore[id].resetHour === undefined) {
                 serverDataStore[id].resetHour = 0; // Default to 0 (midnight)
                 console.warn(`[${new Date().toISOString()}] Initialized missing resetHour for server ${id} on startup.`);
+            }
+            if (serverDataStore[id].resetMinute === undefined) { // New field for minute
+                serverDataStore[id].resetMinute = 0; // Default to 0 minutes
+                console.warn(`[${new Date().toISOString()}] Initialized missing resetMinute for server ${id} on startup.`);
             }
         });
         saveData(); // Save updated structure if any initialization happened
@@ -108,6 +112,7 @@ app.post('/api/report', (req, res) => {
             totalNet: { up: 0, down: 0 }, // Initialize accumulated total traffic
             resetDay: 1, // Default reset day
             resetHour: 0, // Default reset hour (midnight)
+            resetMinute: 0, // Default reset minute (0 minutes)
             lastReset: `${new Date().getFullYear()}-${new Date().getMonth() + 1}`,
             lastUpdated: now,
             online: true,
@@ -138,9 +143,12 @@ app.post('/api/report', (req, res) => {
         if (existingData.systemUptime === undefined) {
             existingData.systemUptime = 0;
         }
-        // New: Ensure resetHour is present for existing servers
+        // New: Ensure resetHour and resetMinute are present for existing servers
         if (existingData.resetHour === undefined) {
             existingData.resetHour = 0;
+        }
+        if (existingData.resetMinute === undefined) {
+            existingData.resetMinute = 0;
         }
     }
 
@@ -201,7 +209,7 @@ app.post('/api/report', (req, res) => {
         lastUpdated: now, // Always update lastUpdated timestamp
         online: true, // Mark as online
         systemUptime: data.systemUptime, // Store the new system uptime
-        // totalTrafficLimit, trafficCalculationMode, and resetHour are preserved from existingData or initialized above
+        // totalTrafficLimit, trafficCalculationMode, resetHour, and resetMinute are preserved from existingData or initialized above
     };
 
     saveData(); // Save data to file
@@ -223,11 +231,11 @@ app.get('/api/servers', (req, res) => {
 // POST /api/servers/:id/settings - Update server settings (requires agent installation password)
 app.post('/api/servers/:id/settings', (req, res) => {
     const { id } = req.params;
-    // Destructure new fields: totalTrafficLimit, trafficCalculationMode, and resetHour
-    const { totalNetUp, totalNetDown, resetDay, resetHour, password, expirationDate, totalTrafficLimit, trafficCalculationMode } = req.body;
+    // Destructure new fields: totalTrafficLimit, trafficCalculationMode, resetHour, and resetMinute
+    const { totalNetUp, totalNetDown, resetDay, resetHour, resetMinute, password, expirationDate, totalTrafficLimit, trafficCalculationMode } = req.body;
 
     console.log(`[${new Date().toISOString()}] Received settings update for server ID: ${id}`);
-    console.log(`[${new Date().toISOString()}] New settings: totalTrafficLimit=${totalTrafficLimit}, trafficCalculationMode=${trafficCalculationMode}, resetDay=${resetDay}, resetHour=${resetHour}`);
+    console.log(`[${new Date().toISOString()}] New settings: totalTrafficLimit=${totalTrafficLimit}, trafficCalculationMode=${trafficCalculationMode}, resetDay=${resetDay}, resetHour=${resetHour}, resetMinute=${resetMinute}`);
 
 
     // Validate agent installation password
@@ -241,6 +249,7 @@ app.post('/api/servers/:id/settings', (req, res) => {
         serverDataStore[id].totalNet.down = totalNetDown;
         serverDataStore[id].resetDay = resetDay;
         serverDataStore[id].resetHour = resetHour; // Save the new reset hour
+        serverDataStore[id].resetMinute = resetMinute; // Save the new reset minute
         serverDataStore[id].expirationDate = expirationDate; // Save expiration date
         // Save new traffic limit and calculation mode
         serverDataStore[id].totalTrafficLimit = totalTrafficLimit;
@@ -296,24 +305,26 @@ app.post('/api/verify-agent-password', (req, res) => {
     }
 });
 
-// Traffic reset check function - Runs hourly to reset monthly traffic
+// Traffic reset check function - Runs every minute to reset monthly traffic
 function checkAndResetTraffic() {
-    // Get current date and hour in Shanghai timezone
+    // Get current date and time in Shanghai timezone
     const nowInShanghai = new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' });
     const currentShanghaiDate = new Date(nowInShanghai);
     const currentDayShanghai = currentShanghaiDate.getDate();
     const currentHourShanghai = currentShanghaiDate.getHours();
+    const currentMinuteShanghai = currentShanghaiDate.getMinutes(); // Get current minute
     const currentMonthYearShanghai = `${currentShanghaiDate.getFullYear()}-${currentShanghaiDate.getMonth() + 1}`;
 
     let changed = false;
 
-    console.log(`[${new Date().toISOString()}] Running hourly traffic reset check for Shanghai time (${currentDayShanghai}日 ${currentHourShanghai}点)...`);
+    console.log(`[${new Date().toISOString()}] Running minute-by-minute traffic reset check for Shanghai time (${currentDayShanghai}日 ${currentHourShanghai}点${currentMinuteShanghai}分)...`);
 
     Object.keys(serverDataStore).forEach(id => {
         const server = serverDataStore[id];
-        // Check if reset day and hour are reached and not yet reset for the current month
+        // Check if reset day, hour, and minute are reached and not yet reset for the current month
         if (server.resetDay === currentDayShanghai &&
             server.resetHour === currentHourShanghai &&
+            server.resetMinute === currentMinuteShanghai && // Compare minutes
             server.lastReset !== currentMonthYearShanghai) {
 
             console.log(`[${new Date().toISOString()}] Resetting traffic for server ${id} as per configured time...`);
@@ -321,7 +332,7 @@ function checkAndResetTraffic() {
             server.lastReset = currentMonthYearShanghai;
             changed = true;
         } else {
-            console.log(`[${new Date().toISOString()}] Server ${id}: No reset needed. Configured: Day ${server.resetDay}, Hour ${server.resetHour}. Current Shanghai: Day ${currentDayShanghai}, Hour ${currentHourShanghai}. Last reset: ${server.lastReset}.`);
+            console.log(`[${new Date().toISOString()}] Server ${id}: No reset needed. Configured: Day ${server.resetDay}, Hour ${server.resetHour}, Minute ${server.resetMinute}. Current Shanghai: Day ${currentDayShanghai}, Hour ${currentHourShanghai}, Minute ${currentMinuteShanghai}. Last reset: ${server.lastReset}.`);
         }
     });
 
@@ -331,11 +342,11 @@ function checkAndResetTraffic() {
     }
 }
 
-// Start the server and set up hourly traffic reset check
+// Start the server and set up minute-by-minute traffic reset check
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`[${new Date().toISOString()}] Monitor backend server running on http://0.0.0.0:${PORT}`);
-    // Check for traffic reset hourly
-    setInterval(checkAndResetTraffic, 1000 * 60 * 60); // Run every hour
+    // Check for traffic reset every minute
+    setInterval(checkAndResetTraffic, 1000 * 60); // Run every minute
     // Run check immediately on startup
     checkAndResetTraffic();
 });
