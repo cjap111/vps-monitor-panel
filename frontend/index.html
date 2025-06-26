@@ -27,7 +27,6 @@
         .icon-btn:hover { background: rgba(255,255,255,0.2); }
 
         /* Custom styles to prevent server name overflow */
-        /* Make the name container take available space and allow truncation */
         .card .server-name-container {
             flex-grow: 1; /* Allows it to take available space */
             min-width: 0; /* Prevents overflow issues in flex container */
@@ -40,7 +39,6 @@
         }
 
         /* Styles for the detail modal to control height */
-        /* Make the modal content itself a flex container and set its max-height */
         #serverDetailModal > div { /* Target the inner modal content div */
             max-height: 90vh; /* Set a maximum height for the modal itself */
             display: flex;
@@ -64,6 +62,17 @@
         .chart-container canvas {
             max-width: 100%;
             height: 100%; /* Important for canvas to respect container height */
+        }
+        /* Custom spacing for data lines */
+        .data-line {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .data-line .label {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem; /* Space between icon and text */
         }
     </style>
 </head>
@@ -122,7 +131,7 @@
                 <i data-lucide="ubuntu" class="w-4 h-4"></i>
                 <span data-id="os">Ubuntu 22.04 LTS</span>
             </div>
-            
+
             <div class="space-y-4 pt-2">
                 <div class="resource-item">
                     <div class="flex justify-between text-sm mb-1"><span>CPU</span><span class="font-mono" data-id="cpu-usage">0%</span></div>
@@ -145,22 +154,26 @@
                 <div class="text-xs text-gray-500 flex items-center space-x-2"><i data-lucide="clock" class="w-4 h-4"></i><span data-id="uptime">在线 0 天</span></div>
             </div>
             <div class="pt-3 mt-3 border-t border-gray-700/50 text-xs text-gray-400 space-y-1">
-                <div class="flex justify-between items-center">
-                    <span class="flex items-center space-x-2 font-medium"><i data-lucide="bar-chart-3" class="w-4 h-4"></i><span>总流量</span></span>
+                <div class="data-line">
+                    <span class="label font-medium"><i data-lucide="bar-chart-3" class="w-4 h-4"></i><span>总流量</span></span>
                     <span class="text-gray-500" data-id="reset-info">每月1日重置</span>
                 </div>
-                <div class="flex justify-between items-center pl-1">
-                    <span class="flex items-center space-x-1.5 text-red-400"><i data-lucide="arrow-up" class="w-3 h-3"></i><span data-id="total-net-up" class="font-mono">0 GB</span></span>
-                    <span class="flex items-center space-x-1.5 text-cyan-400"><i data-lucide="arrow-down" class="w-3 h-3"></i><span data-id="total-net-down" class="font-mono">0 GB</span></span>
+                <div class="data-line pl-1">
+                    <span class="label text-red-400"><i data-lucide="arrow-up" class="w-3 h-3"></i><span data-id="total-net-up" class="font-mono">0 GB</span></span>
+                    <span class="label text-cyan-400"><i data-lucide="arrow-down" class="w-3 h-3"></i><span data-id="total-net-down" class="font-mono">0 GB</span></span>
                 </div>
-                 <!-- 新增的到期日期显示 -->
-                <div class="flex justify-between items-center pl-1 pt-1">
-                    <span class="flex items-center space-x-1.5 text-orange-300"><i data-lucide="calendar" class="w-3 h-3"></i><span data-id="expiration-info" class="font-mono"></span></span>
+                <!-- Remaining traffic display -->
+                <div class="data-line pl-1 pt-1">
+                    <span class="label text-gray-300"><i data-lucide="data" class="w-3 h-3"></i><span data-id="remaining-traffic" class="font-mono">剩余 0 GB</span></span>
+                </div>
+                 <!-- Expiration date display -->
+                <div class="data-line pl-1 pt-1">
+                    <span class="label text-orange-300"><i data-lucide="calendar" class="w-3 h-3"></i><span data-id="expiration-info" class="font-mono"></span></span>
                 </div>
             </div>
         </div>
     </template>
-    
+
     <!-- Add/Edit Server Modal (Consolidated) -->
     <div id="addServerModal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
         <div class="bg-[#2c2c2c] rounded-lg shadow-xl p-8 w-full max-w-lg m-4 border border-gray-600">
@@ -200,12 +213,27 @@
                         <label for="settingResetDay" class="block text-sm font-medium text-gray-300 mb-2">流量重置日 (1-28)</label>
                         <input type="number" min="1" max="28" id="settingResetDay" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:ring-indigo-500 focus:border-indigo-500" required>
                     </div>
-                    <!-- 新增的密码输入框 -->
+                    <!-- New: Total Traffic Limit Input -->
+                    <div>
+                        <label for="settingTotalTrafficLimit" class="block text-sm font-medium text-gray-300 mb-2">总流量限制 (GB) (0 表示无限制)</label>
+                        <input type="number" step="0.01" id="settingTotalTrafficLimit" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:ring-indigo-500 focus:border-indigo-500" required>
+                    </div>
+                    <!-- New: Traffic Calculation Mode Selection -->
+                    <div>
+                        <label for="settingTrafficCalculationMode" class="block text-sm font-medium text-gray-300 mb-2">流量计算方式</label>
+                        <select id="settingTrafficCalculationMode" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:ring-indigo-500 focus:border-indigo-500">
+                            <option value="bidirectional">双向 (流入 + 流出)</option>
+                            <option value="upload">单向 - 上传</option>
+                            <option value="download">单向 - 下载</option>
+                            <option value="highest">单向 - 上传或下载最高值</option>
+                        </select>
+                    </div>
+                    <!-- Agent Installation Password -->
                     <div>
                         <label for="settingsPassword" class="block text-sm font-medium text-gray-300 mb-2">被控端安装密码</label>
                         <input type="password" id="settingsPassword" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:ring-indigo-500 focus:border-indigo-500" required>
                     </div>
-                    <!-- 新增的到期日期输入框 -->
+                    <!-- Expiration Date Input -->
                     <div>
                         <label for="settingExpirationDate" class="block text-sm font-medium text-gray-300 mb-2">到期日期</label>
                         <input type="date" id="settingExpirationDate" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:ring-indigo-500 focus:border-indigo-500">
@@ -334,6 +362,10 @@
                         <div class="flex items-center space-x-2"><i data-lucide="bar-chart-3" class="w-4 h-4"></i><span>总上传: <span id="detailTotalNetUp" class="font-mono text-red-400">0 GB</span></span></div>
                         <div class="flex items-center space-x-2"><i data-lucide="bar-chart-3" class="w-4 h-4"></i><span>总下载: <span id="detailTotalNetDown" class="font-mono text-cyan-400">0 GB</span></span></div>
                     </div>
+                    <!-- Remaining traffic detail display -->
+                    <div class="pt-1 text-xs text-gray-400 flex items-center space-x-2">
+                        <i data-lucide="data" class="w-4 h-4"></i><span id="detailRemainingTraffic" class="font-mono">剩余 0 GB</span>
+                    </div>
                     <div class="text-xs text-gray-500 flex justify-between items-center">
                         <span class="flex items-center space-x-2"><i data-lucide="clock" class="w-4 h-4"></i><span id="detailUptime">在线 0 天</span></span>
                         <span class="flex items-center space-x-2"><i data-lucide="repeat" class="w-4 h-4"></i><span id="detailResetInfo">每月1日重置</span></span>
@@ -343,7 +375,7 @@
                     </div>
                 </div>
             </div>
-            
+
             <div class="flex justify-end mt-8 flex-shrink-0">
                 <button data-action="close-detail" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg">关闭</button>
             </div>
@@ -355,10 +387,10 @@
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             lucide.createIcons();
-            
+
             const serverGrid = document.getElementById('server-grid');
             const template = document.getElementById('server-card-template');
-            
+
             let servers = [];
             // API endpoint will automatically use the current page's domain
             const API_ENDPOINT = `${window.location.protocol}//${window.location.host}/api`;
@@ -378,9 +410,13 @@
 
             // Function to display custom messages instead of alert()
             function showMessage(title, message) {
-                document.getElementById('messageModalTitle').textContent = title;
-                document.getElementById('messageModalContent').textContent = message;
-                document.getElementById('messageModal').style.display = 'flex';
+                const messageModalTitleElement = document.getElementById('messageModalTitle');
+                const messageModalContentElement = document.getElementById('messageModalContent');
+                const messageModalElement = document.getElementById('messageModal');
+
+                if (messageModalTitleElement) messageModalTitleElement.textContent = title;
+                if (messageModalContentElement) messageModalContentElement.textContent = message;
+                if (messageModalElement) messageModalElement.style.display = 'flex';
                 lucide.createIcons(); // Re-create icons if the modal content changes
             }
 
@@ -393,7 +429,7 @@
                 const i = Math.floor(Math.log(bytes) / Math.log(k));
                 return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)); // Return just the number for dynamic speed
             };
-            
+
             // New formatSpeed function to return value and unit separately
             const formatSpeedWithUnit = (bytes) => {
                 if (bytes === 0) return { value: 0, unit: 'B/s' };
@@ -403,8 +439,27 @@
                 return { value: parseFloat((bytes / Math.pow(k, i)).toFixed(2)), unit: sizes[i] };
             };
 
+            // Helper function to calculate used traffic based on mode
+            function calculateUsedTraffic(server) {
+                const totalNetUp = (server.totalNet && typeof server.totalNet.up === 'number') ? server.totalNet.up : 0;
+                const totalNetDown = (server.totalNet && typeof server.totalNet.down === 'number') ? server.totalNet.down : 0;
+                const mode = server.trafficCalculationMode || 'bidirectional'; // Default to bidirectional if not set
 
-            // Function to update a single server card
+                switch (mode) {
+                    case 'bidirectional':
+                        return totalNetUp + totalNetDown;
+                    case 'upload':
+                        return totalNetUp;
+                    case 'download':
+                        return totalNetDown;
+                    case 'highest':
+                        return Math.max(totalNetUp, totalNetDown);
+                    default:
+                        return totalNetUp + totalNetDown; // Fallback
+                }
+            }
+
+            // Function to update a single server card (main grid view)
             function updateServerCard(cardElement, server) {
                 // Update basic info
                 const nameElement = cardElement.querySelector('[data-id="name"]');
@@ -419,8 +474,7 @@
                 // Update status dot and text
                 const statusDot = cardElement.querySelector('[data-id="status-dot"]');
                 const statusText = cardElement.querySelector('[data-id="status-text"]');
-                
-                // Ensure statusDot and statusText exist before modifying classList/textContent
+
                 if (statusDot && statusText) {
                     if (server.online) {
                         statusDot.classList.remove('status-offline');
@@ -456,10 +510,9 @@
                 // Update Disk
                 const diskUsedMB = server.disk ? server.disk.used : 0;
                 const diskTotalMB = server.disk ? server.disk.total : 0;
-                
-                // Convert MB to GB for display
-                const diskUsedGB = (diskUsedMB / 1024).toFixed(2); // Keep 2 decimal places for GB
-                const diskTotalGB = (diskTotalMB / 1024).toFixed(2); // Keep 2 decimal places for GB
+
+                const diskUsedGB = (diskUsedMB / 1024).toFixed(2);
+                const diskTotalGB = (diskTotalMB / 1024).toFixed(2);
 
                 const diskUsagePercent = diskTotalMB > 0 ? (diskUsedMB / diskTotalMB * 100).toFixed(1) : 0;
                 const diskUsageElement = cardElement.querySelector('[data-id="disk-usage"]');
@@ -493,8 +546,8 @@
                 }
 
                 // Update Total Net Traffic
-                const totalNetUpGB = (server.totalNet.up / GB_IN_BYTES).toFixed(2);
-                const totalNetDownGB = (server.totalNet.down / GB_IN_BYTES).toFixed(2);
+                const totalNetUpGB = (server.totalNet && typeof server.totalNet.up === 'number') ? (server.totalNet.up / GB_IN_BYTES).toFixed(2) : '0.00';
+                const totalNetDownGB = (server.totalNet && typeof server.totalNet.down === 'number') ? (server.totalNet.down / GB_IN_BYTES).toFixed(2) : '0.00';
                 const totalNetUpElement = cardElement.querySelector('[data-id="total-net-up"]');
                 const totalNetDownElement = cardElement.querySelector('[data-id="total-net-down"]');
                 const resetInfoElement = cardElement.querySelector('[data-id="reset-info"]');
@@ -503,25 +556,52 @@
                 if (totalNetDownElement) totalNetDownElement.textContent = `${totalNetDownGB} GB`;
                 if (resetInfoElement) resetInfoElement.textContent = `每月${server.resetDay}日重置`;
 
+                // Calculate and update Remaining Traffic
+                const totalTrafficLimitGB = (server.totalTrafficLimit !== undefined && typeof server.totalTrafficLimit === 'number') ? server.totalTrafficLimit : 0;
+                const remainingTrafficElement = cardElement.querySelector('[data-id="remaining-traffic"]');
+
+                if (remainingTrafficElement) {
+                    if (totalTrafficLimitGB === 0) {
+                        // If totalTrafficLimit is 0, display infinity symbol and do not calculate remaining traffic
+                        remainingTrafficElement.textContent = `剩余 ∞ GB`;
+                        remainingTrafficElement.classList.remove('text-red-400'); // Ensure no red color
+                        remainingTrafficElement.classList.add('text-gray-300');
+                    } else {
+                        const usedTrafficBytes = calculateUsedTraffic(server);
+                        const usedTrafficGB = (usedTrafficBytes / GB_IN_BYTES);
+                        const remainingTrafficGB = (totalTrafficLimitGB - usedTrafficGB).toFixed(2);
+
+                        remainingTrafficElement.textContent = `剩余 ${remainingTrafficGB} GB`;
+                        if (remainingTrafficGB < 0) {
+                            remainingTrafficElement.classList.remove('text-gray-300');
+                            remainingTrafficElement.classList.add('text-red-400');
+                        } else {
+                            remainingTrafficElement.classList.remove('text-red-400');
+                            remainingTrafficElement.classList.add('text-gray-300');
+                        }
+                    }
+                }
+
+
                 // Update Expiration Date and calculate remaining days
                 const expirationInfo = cardElement.querySelector('[data-id="expiration-info"]');
-                if (expirationInfo) { // Ensure expirationInfo element exists
+                if (expirationInfo) {
                     if (server.expirationDate) {
                         const expDate = new Date(server.expirationDate);
                         const now = new Date();
-                        now.setHours(0, 0, 0, 0); // Normalize 'now' to start of day
-                        expDate.setHours(0, 0, 0, 0); // Normalize 'expDate' to start of day
+                        now.setHours(0, 0, 0, 0);
+                        expDate.setHours(0, 0, 0, 0);
 
                         const diffTime = expDate.getTime() - now.getTime();
                         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
                         if (diffDays > 0) {
                             expirationInfo.textContent = `剩余 ${diffDays} 天`;
-                            expirationInfo.classList.remove('text-red-400', 'text-orange-400'); // Remove all before adding
+                            expirationInfo.classList.remove('text-red-400', 'text-orange-400');
                             if (diffDays <= 7) {
-                                expirationInfo.classList.add('text-orange-400'); // Orange for expiring soon
+                                expirationInfo.classList.add('text-orange-400');
                             } else {
-                                expirationInfo.classList.add('text-green-400'); // Green for normal
+                                expirationInfo.classList.add('text-green-400');
                             }
                         } else if (diffDays === 0) {
                             expirationInfo.textContent = `今天到期`;
@@ -530,8 +610,7 @@
                         } else {
                             expirationInfo.textContent = `已过期 ${Math.abs(diffDays)} 天`;
                             expirationInfo.classList.remove('text-orange-400', 'text-green-400');
-                            expirationInfo.classList.add('text-red-400'); // Red for expired
-                            // Optionally set status to offline if expired - but main online status should handle this
+                            expirationInfo.classList.add('text-red-400');
                         }
                     } else {
                         expirationInfo.textContent = '到期日期: 未设置';
@@ -547,10 +626,9 @@
                 const errorDisplay = document.getElementById('error-display');
                 const errorMessageContent = document.getElementById('error-message-content');
 
-                // Show loading indicator, hide error
-                loadingIndicator.classList.remove('hidden');
-                errorDisplay.classList.add('hidden');
-                errorMessageContent.textContent = ''; // Clear previous error
+                if (loadingIndicator) loadingIndicator.classList.remove('hidden');
+                if (errorDisplay) errorDisplay.classList.add('hidden');
+                if (errorMessageContent) errorMessageContent.textContent = '';
 
                 try {
                     const response = await fetch(`${API_ENDPOINT}/servers`);
@@ -561,48 +639,49 @@
                     const serverList = await response.json();
                     servers = serverList;
                     renderAllServers();
-                    console.log(`[${new Date().toISOString()}] Successfully fetched and rendered ${serverList.length} servers.`); // Added success log
+                    console.log(`[${new Date().toISOString()}] Successfully fetched and rendered ${serverList.length} servers.`);
                 } catch (error) {
-                    console.error(`[${new Date().toISOString()}] Error fetching server list:`, error); // Added detailed error log
-                    errorDisplay.classList.remove('hidden');
-                    errorMessageContent.textContent = error.message;
-                    serverGrid.innerHTML = ''; // Clear servers if error
+                    console.error(`[${new Date().toISOString()}] Error fetching server list:`, error);
+                    if (errorDisplay) errorDisplay.classList.remove('hidden');
+                    if (errorMessageContent) errorMessageContent.textContent = error.message;
+                    if (serverGrid) serverGrid.innerHTML = '';
                 } finally {
-                    loadingIndicator.classList.add('hidden'); // Always hide loading indicator
+                    if (loadingIndicator) loadingIndicator.classList.add('hidden');
                 }
             }
 
             function renderAllServers() {
-                serverGrid.innerHTML = ''; // Clear existing cards
+                if (serverGrid) serverGrid.innerHTML = '';
 
                 if (servers.length === 0) {
                     const noServersMessage = document.createElement('div');
                     noServersMessage.className = 'col-span-full text-center text-gray-400 p-8';
                     noServersMessage.innerHTML = '<p>暂无服务器数据。请添加服务器并确保Agent已成功安装。</p>';
-                    serverGrid.appendChild(noServersMessage);
+                    if (serverGrid) serverGrid.appendChild(noServersMessage);
                 } else {
-                    // Sort: online first, then offline
                     servers.sort((a, b) => (b.online ? 1 : 0) - (a.online ? 1 : 0));
                     servers.forEach(server => {
                         const card = template.content.cloneNode(true).querySelector('.card');
                         card.dataset.serverId = server.id;
                         updateServerCard(card, server);
-                        serverGrid.appendChild(card);
+                        if (serverGrid) serverGrid.appendChild(card);
                     });
                 }
                 lucide.createIcons();
             }
-            
+
             const addModal = document.getElementById('addServerModal');
             const settingsModal = document.getElementById('serverSettingsModal');
             const deleteModal = document.getElementById('deleteServerModal');
-            const messageModal = document.getElementById('messageModal'); // Get the new message modal
-            const detailModal = document.getElementById('serverDetailModal'); // Get the new detail modal
+            const messageModal = document.getElementById('messageModal');
+            const detailModal = document.getElementById('serverDetailModal');
 
             document.getElementById('addServerBtn').addEventListener('click', () => {
                 const command = `curl -sL https://raw.githubusercontent.com/cjap111/vps-monitor-panel/main/install.sh | bash -s -- 2`;
-                document.getElementById('installCommand').textContent = command;
-                addModal.style.display = 'flex';
+                if (document.getElementById('installCommand')) {
+                    document.getElementById('installCommand').textContent = command;
+                }
+                if (addModal) addModal.style.display = 'flex';
                 lucide.createIcons();
             });
 
@@ -617,13 +696,14 @@
 
                     if (action === 'close' && modal) {
                         modal.style.display = 'none';
+                        console.log('Modal closed:', modal.id); // Debugging
                     } else if (action === 'close-message' && messageModal) {
                         messageModal.style.display = 'none';
+                        console.log('Message Modal closed.'); // Debugging
                     } else if (action === 'close-detail' && detailModal) {
                         detailModal.style.display = 'none';
-                        clearInterval(detailViewInterval); // Stop refreshing detail data
+                        clearInterval(detailViewInterval);
                         detailViewInterval = null;
-                        // Destroy chart instances when modal closes
                         if (downloadChartInstance) {
                             downloadChartInstance.destroy();
                             downloadChartInstance = null;
@@ -632,24 +712,33 @@
                             uploadChartInstance.destroy();
                             uploadChartInstance = null;
                         }
-                        // Reset network history
                         networkHistory.labels = Array.from({length: chartDataPoints}, (_, i) => i % 10 === 0 ? `-${chartDataPoints - i}s` : ''),
                         networkHistory.download = Array(chartDataPoints).fill(0),
                         networkHistory.upload = Array(chartDataPoints).fill(0);
+                        console.log('Detail Modal closed, interval cleared.'); // Debugging
                     }
                 }
-                
+
                 // Handle card clicks for detail view, settings, and delete
                 if (card) {
                     const serverId = card.dataset.serverId;
-                    if (actionTarget) { // If a data-action button was clicked
-                        const action = actionTarget.dataset.action;
+                    // Check if an action button was clicked directly within the card
+                    const clickedActionButton = e.target.closest('[data-action="settings"]') || e.target.closest('[data-action="delete"]');
+
+                    console.log('Clicked element:', e.target);
+                    console.log('Clicked action button:', clickedActionButton);
+                    console.log('Clicked card:', card);
+
+                    if (clickedActionButton) {
+                        const action = clickedActionButton.dataset.action;
+                        console.log(`Action button '${action}' clicked for server ${serverId}.`); // Debugging
                         if (action === 'settings') {
                             openSettingsModal(serverId);
                         } else if (action === 'delete') {
                             openDeleteModal(serverId);
                         }
-                    } else { // If the card itself was clicked (not a button inside it)
+                    } else { // If the card itself was clicked (not an action button inside it)
+                        console.log(`Card clicked for server ${serverId}, opening detail modal.`); // Debugging
                         openServerDetailModal(serverId);
                     }
                 }
@@ -658,91 +747,115 @@
             function openSettingsModal(serverId) {
                 const server = servers.find(s => s.id == serverId);
                 if (!server) return;
-                document.getElementById('settingServerId').value = server.id;
-                document.getElementById('settingTotalNetUp').value = (server.totalNet.up / GB_IN_BYTES).toFixed(2);
-                document.getElementById('settingTotalNetDown').value = (server.totalNet.down / GB_IN_BYTES).toFixed(2);
-                document.getElementById('settingResetDay').value = server.resetDay;
-                document.getElementById('settingsPassword').value = ''; // Clear password field
 
-                // Set value for expiration date input
-                if (server.expirationDate) {
-                    // Assign ISO format date (e.g., "YYYY-MM-DD") directly to date input
-                    document.getElementById('settingExpirationDate').value = server.expirationDate; // Assuming it's alreadyYYYY-MM-DD from backend
-                } else {
-                    document.getElementById('settingExpirationDate').value = ''; // Clear if not set
+                if (document.getElementById('settingServerId')) document.getElementById('settingServerId').value = server.id;
+                // Ensure totalNet exists and has properties before accessing
+                const currentTotalNetUp = (server.totalNet && typeof server.totalNet.up === 'number') ? (server.totalNet.up / GB_IN_BYTES).toFixed(2) : '0.00';
+                const currentTotalNetDown = (server.totalNet && typeof server.totalNet.down === 'number') ? (server.totalNet.down / GB_IN_BYTES).toFixed(2) : '0.00';
+
+                if (document.getElementById('settingTotalNetUp')) document.getElementById('settingTotalNetUp').value = currentTotalNetUp;
+                if (document.getElementById('settingTotalNetDown')) document.getElementById('settingTotalNetDown').value = currentTotalNetDown;
+                if (document.getElementById('settingResetDay')) document.getElementById('settingResetDay').value = server.resetDay;
+                if (document.getElementById('settingsPassword')) document.getElementById('settingsPassword').value = '';
+
+                // Populate new traffic limit and calculation mode fields
+                const totalTrafficLimitElement = document.getElementById('settingTotalTrafficLimit');
+                if (totalTrafficLimitElement) {
+                    totalTrafficLimitElement.value = (server.totalTrafficLimit !== undefined && typeof server.totalTrafficLimit === 'number') ? server.totalTrafficLimit : 0;
                 }
 
-                settingsModal.style.display = 'flex';
+                const trafficCalculationModeElement = document.getElementById('settingTrafficCalculationMode');
+                if (trafficCalculationModeElement) {
+                    trafficCalculationModeElement.value = server.trafficCalculationMode || 'bidirectional';
+                }
+
+                const settingExpirationDateElement = document.getElementById('settingExpirationDate');
+                if (settingExpirationDateElement) {
+                    if (server.expirationDate) {
+                        settingExpirationDateElement.value = server.expirationDate;
+                    } else {
+                        settingExpirationDateElement.value = '';
+                    }
+                }
+
+                if (settingsModal) settingsModal.style.display = 'flex';
+                console.log(`Opened Settings Modal for server ${serverId}`); // Debugging
             }
 
             function openDeleteModal(serverId) {
                 const server = servers.find(s => s.id == serverId);
                 if (!server) return;
-                document.getElementById('deleteServerName').textContent = server.name;
-                document.getElementById('deleteServerId').value = serverId;
-                deleteModal.style.display = 'flex';
+
+                if (document.getElementById('deleteServerName')) document.getElementById('deleteServerName').textContent = server.name;
+                if (document.getElementById('deleteServerId')) document.getElementById('deleteServerId').value = serverId;
+                if (deleteModal) deleteModal.style.display = 'flex';
+                console.log(`Opened Delete Modal for server ${serverId}`); // Debugging
             }
 
             // Function to open server detail modal
             function openServerDetailModal(serverId) {
                 const server = servers.find(s => s.id === serverId);
-                if (!server) return;
+                if (!server) {
+                    console.error("Server data not found for detail modal:", serverId);
+                    showMessage('错误', '未能找到服务器数据。');
+                    return;
+                }
+                console.log(`Attempting to open detail modal for server ${serverId}. Current server data:`, server); // Debugging
 
-                // Reset network history for new chart
                 networkHistory = {
                     labels: Array.from({length: chartDataPoints}, (_, i) => i % 10 === 0 ? `-${chartDataPoints - i}s` : ''),
                     download: Array(chartDataPoints).fill(0),
                     upload: Array(chartDataPoints).fill(0)
                 };
 
-                // Populate initial data for the modal
                 updateDetailModalData(server);
-                initDetailCharts(); // Initialize charts before first data fetch
+                initDetailCharts();
 
-                detailModal.style.display = 'flex';
+                if (detailModal) detailModal.style.display = 'flex';
                 lucide.createIcons();
 
-                // Start fetching and updating detail data every second
-                if (detailViewInterval) { // Clear existing interval if any
+                if (detailViewInterval) {
                     clearInterval(detailViewInterval);
                 }
-                detailViewInterval = setInterval(() => fetchServerDetail(serverId), 1000); // Fetch every 1 second
+                // Changed interval to 1 second
+                detailViewInterval = setInterval(() => fetchServerDetail(serverId), 1000);
+                console.log('Detail modal opened, refresh interval started.'); // Debugging
             }
 
             // Function to fetch single server detail (for detail modal)
             async function fetchServerDetail(serverId) {
+                console.log(`Fetching detail for server ${serverId} at ${new Date().toISOString()}`); // Debugging
                 try {
-                    const response = await fetch(`${API_ENDPOINT}/servers`); // Fetch all servers, then find the specific one
+                    const response = await fetch(`${API_ENDPOINT}/servers`);
                     if (!response.ok) {
-                        throw new Error(`HTTP Error: ${response.status} - ${response.statusText}`);
+                        const errorText = await response.text();
+                        throw new Error(`HTTP Error: ${response.status} - ${errorText || response.statusText}`);
                     }
                     const serverList = await response.json();
                     const server = serverList.find(s => s.id === serverId);
 
                     if (server) {
+                        console.log(`Received fresh data for server ${serverId}:`, server); // Debugging
                         updateDetailModalData(server);
                         updateDetailCharts(server);
                     } else {
-                        // Server might have been deleted or gone offline
+                        console.warn(`Server ${serverId} not found in fetched list.`); // Debugging
                         clearInterval(detailViewInterval);
-                        detailModal.style.display = 'none';
+                        if (detailModal) detailModal.style.display = 'none';
                         showMessage('服务器已移除', '您尝试查看的服务器已不再可用。');
-                        fetchAndRenderServers(); // Refresh main grid
+                        fetchAndRenderServers();
                     }
                 } catch (error) {
                     console.error(`Error fetching server detail for ${serverId}:`, error);
-                    // Optionally display an error within the modal or close it
                     clearInterval(detailViewInterval);
-                    detailModal.style.display = 'none';
+                    if (detailModal) detailModal.style.display = 'none';
                     showMessage('加载失败', `无法加载服务器详细信息: ${error.message}`);
-                    fetchAndRenderServers(); // Refresh main grid
+                    fetchAndRenderServers();
                 }
             }
 
             // Function to update static data in detail modal
             function updateDetailModalData(server) {
-                // Get elements that are common to both main card and detail modal
-                // These elements should exist in the detail modal, but might not in the main card template
                 const detailServerNameElement = document.getElementById('detailServerName');
                 if (detailServerNameElement) detailServerNameElement.textContent = server.name;
 
@@ -751,53 +864,55 @@
 
                 const detailServerOSElement = document.getElementById('detailServerOS');
                 if (detailServerOSElement) detailServerOSElement.textContent = server.os;
-                
-                // Add CPU Model - Check if element exists before accessing
+
                 const detailCpuModelElement = document.getElementById('detailCpuModel');
                 if (detailCpuModelElement) {
                     detailCpuModelElement.textContent = `CPU 型号: ${server.cpuModel || 'N/A'}`;
                 }
 
-                // Add Memory Model - Check if element exists before accessing
                 const detailMemModelElement = document.getElementById('detailMemModel');
                 if (detailMemModelElement) {
                     detailMemModelElement.textContent = `内存型号: ${server.memModel || 'N/A'}`;
                 }
 
-                // Add Disk Model - Check if element exists before accessing
                 const detailDiskModelElement = document.getElementById('detailDiskModel');
                 if (detailDiskModelElement) {
                     detailDiskModelElement.textContent = `硬盘型号: ${server.diskModel || 'N/A'}`;
                 }
 
 
-                const detailCpuUsage = server.cpu ? server.cpu.toFixed(1) : 0;
+                // Safely access server.cpu properties
+                const cpuUsage = (server.cpu !== undefined && server.cpu !== null && typeof server.cpu === 'number') ? server.cpu.toFixed(1) : 0;
                 const detailCpuUsageElement = document.getElementById('detailCpuUsage');
                 const detailCpuBarElement = document.getElementById('detailCpuBar');
-                if (detailCpuUsageElement) detailCpuUsageElement.textContent = `${detailCpuUsage}%`;
-                if (detailCpuBarElement) detailCpuBarElement.style.width = `${detailCpuUsage}%`;
+                if (detailCpuUsageElement) detailCpuUsageElement.textContent = `${cpuUsage}%`;
+                if (detailCpuBarElement) detailCpuBarElement.style.width = `${cpuUsage}%`;
 
-                const detailMemUsed = server.mem ? server.mem.used : 0;
-                const detailMemTotal = server.mem ? server.mem.total : 0;
-                const detailMemUsagePercent = detailMemTotal > 0 ? (detailMemUsed / detailMemTotal * 100).toFixed(1) : 0;
+                // Safely access server.mem properties
+                const memUsed = (server.mem && typeof server.mem.used === 'number') ? server.mem.used : 0;
+                const memTotal = (server.mem && typeof server.mem.total === 'number') ? server.mem.total : 0;
+                const memUsagePercent = memTotal > 0 ? (memUsed / memTotal * 100).toFixed(1) : 0;
                 const detailMemUsageElement = document.getElementById('detailMemUsage');
                 const detailMemBarElement = document.getElementById('detailMemBar');
-                if (detailMemUsageElement) detailMemUsageElement.textContent = `${detailMemUsed} MB / ${detailMemTotal} MB`;
-                if (detailMemBarElement) detailMemBarElement.style.width = `${detailMemUsagePercent}%`;
+                if (detailMemUsageElement) detailMemUsageElement.textContent = `${memUsed} MB / ${memTotal} MB`;
+                // Corrected: Used detailMemBarElement instead of memBarElement
+                if (detailMemBarElement) detailMemBarElement.style.width = `${memUsagePercent}%`;
 
-                const detailDiskUsedMB = server.disk ? server.disk.used : 0;
-                const detailDiskTotalMB = server.disk ? server.disk.total : 0;
-                const detailDiskUsedGB = (detailDiskUsedMB / 1024).toFixed(2);
-                const detailDiskTotalGB = (detailDiskTotalMB / 1024).toFixed(2);
-                const detailDiskUsagePercent = detailDiskTotalMB > 0 ? (detailDiskUsedMB / detailDiskTotalMB * 100).toFixed(1) : 0;
+                // Safely access server.disk properties
+                const diskUsedMB = (server.disk && typeof server.disk.used === 'number') ? server.disk.used : 0;
+                const diskTotalMB = (server.disk && typeof server.disk.total === 'number') ? server.disk.total : 0;
+                const detailDiskUsedGB = (diskUsedMB / 1024).toFixed(2);
+                const detailDiskTotalGB = (diskTotalMB / 1024).toFixed(2);
+                const detailDiskUsagePercent = diskTotalMB > 0 ? (diskUsedMB / diskTotalMB * 100).toFixed(1) : 0;
                 const detailDiskUsageElement = document.getElementById('detailDiskUsage');
                 const detailDiskBarElement = document.getElementById('detailDiskBar');
                 if (detailDiskUsageElement) detailDiskUsageElement.textContent = `${detailDiskUsedGB} GB / ${detailDiskTotalGB} GB`;
+                // Corrected: Used detailDiskBarElement and diskUsagePercent
                 if (detailDiskBarElement) detailDiskBarElement.style.width = `${detailDiskUsagePercent}%`;
 
 
-                const detailTotalNetUpGB = (server.totalNet.up / GB_IN_BYTES).toFixed(2);
-                const detailTotalNetDownGB = (server.totalNet.down / GB_IN_BYTES).toFixed(2);
+                const detailTotalNetUpGB = (server.totalNet && typeof server.totalNet.up === 'number') ? (server.totalNet.up / GB_IN_BYTES).toFixed(2) : '0.00';
+                const detailTotalNetDownGB = (server.totalNet && typeof server.totalNet.down === 'number') ? (server.totalNet.down / GB_IN_BYTES).toFixed(2) : '0.00';
                 const detailTotalNetUpElement = document.getElementById('detailTotalNetUp');
                 const detailTotalNetDownElement = document.getElementById('detailTotalNetDown');
                 const detailResetInfoElement = document.getElementById('detailResetInfo');
@@ -817,37 +932,64 @@
                     }
                 }
 
+                // Calculate and update Remaining Traffic for detail modal
+                const detailTotalTrafficLimitGB = (server.totalTrafficLimit !== undefined && typeof server.totalTrafficLimit === 'number') ? server.totalTrafficLimit : 0;
+                const detailRemainingTrafficElement = document.getElementById('detailRemainingTraffic');
+
+                if (detailRemainingTrafficElement) {
+                    if (detailTotalTrafficLimitGB === 0) {
+                        detailRemainingTrafficElement.textContent = `剩余 ∞ GB`;
+                        detailRemainingTrafficElement.classList.remove('text-red-400');
+                        detailRemainingTrafficElement.classList.add('text-gray-400');
+                    } else {
+                        const detailUsedTrafficBytes = calculateUsedTraffic(server);
+                        const detailUsedTrafficGB = (detailUsedTrafficBytes / GB_IN_BYTES);
+                        const detailRemainingTrafficGB = (detailTotalTrafficLimitGB - detailUsedTrafficGB).toFixed(2);
+
+                        detailRemainingTrafficElement.textContent = `剩余 ${detailRemainingTrafficGB} GB`;
+                        if (detailRemainingTrafficGB < 0) {
+                            detailRemainingTrafficElement.classList.remove('text-gray-400');
+                            detailRemainingTrafficElement.classList.add('text-red-400');
+                        } else {
+                            detailRemainingTrafficElement.classList.remove('text-red-400');
+                            detailRemainingTrafficElement.classList.add('text-gray-400');
+                        }
+                    }
+                }
+
+                // Fix: Get the expirationInfo element from the DOM
                 const detailExpirationInfo = document.getElementById('detailExpirationInfo');
-                if (detailExpirationInfo) { // Ensure expirationInfo element exists
+                if (detailExpirationInfo) {
                     if (server.expirationDate) {
                         const expDate = new Date(server.expirationDate);
                         const now = new Date();
-                        now.setHours(0, 0, 0, 0); // Normalize 'now' to start of day
-                        expDate.setHours(0, 0, 0, 0); // Normalize 'expDate' to start of day
+                        now.setHours(0, 0, 0, 0);
+                        expDate.setHours(0, 0, 0, 0);
 
                         const diffTime = expDate.getTime() - now.getTime();
                         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
                         if (diffDays > 0) {
-                            detailExpirationInfo.textContent = `到期日期: 剩余 ${diffDays} 天`;
-                            detailExpirationInfo.classList.remove('text-red-400', 'text-orange-400'); // Remove all before adding
+                            detailExpirationInfo.textContent = `剩余 ${diffDays} 天`;
+                            detailExpirationInfo.classList.remove('text-red-400', 'text-orange-400');
                             if (diffDays <= 7) {
-                                detailExpirationInfo.classList.add('text-orange-400'); // Orange for expiring soon
+                                detailExpirationInfo.classList.add('text-orange-400');
                             } else {
-                                detailExpirationInfo.classList.add('text-green-400'); // Green for normal
+                                detailExpirationInfo.classList.add('text-green-400');
                             }
                         } else if (diffDays === 0) {
-                            detailExpirationInfo.textContent = `到期日期: 今天到期`;
+                            detailExpirationInfo.textContent = `今天到期`;
                             detailExpirationInfo.classList.remove('text-green-400', 'text-red-400');
                             detailExpirationInfo.classList.add('text-orange-400');
                         } else {
-                            detailExpirationInfo.textContent = `到期日期: 已过期 ${Math.abs(diffDays)} 天`;
+                            detailExpirationInfo.textContent = `已过期 ${Math.abs(diffDays)} 天`;
                             detailExpirationInfo.classList.remove('text-orange-400', 'text-green-400');
                             detailExpirationInfo.classList.add('text-red-400');
                         }
                     } else {
                         detailExpirationInfo.textContent = '到期日期: 未设置';
                         detailExpirationInfo.classList.remove('text-orange-400', 'text-red-400', 'text-green-400');
+                        // BUG FIX: Changed 'expirationInfo' to 'detailExpirationInfo'
                         detailExpirationInfo.classList.add('text-gray-400');
                     }
                 }
@@ -858,17 +1000,16 @@
                 const downloadCtx = document.getElementById('downloadChart').getContext('2d');
                 const uploadCtx = document.getElementById('uploadChart').getContext('2d');
 
-                // Destroy existing instances if they exist
                 if (downloadChartInstance) downloadChartInstance.destroy();
                 if (uploadChartInstance) uploadChartInstance.destroy();
 
-                const commonChartOptions = { // Renamed to avoid repetition
-                    animation: false, // Disable animation for real-time updates
+                const commonChartOptions = {
+                    animation: false,
                     responsive: true,
                     maintainAspectRatio: false,
                     scales: {
                         x: {
-                            type: 'category', // Use 'category' for labels array
+                            type: 'category',
                             labels: networkHistory.labels,
                             grid: { color: '#3d3d3d' },
                             ticks: { color: '#888' }
@@ -879,59 +1020,54 @@
                             ticks: {
                                 color: '#888',
                                 callback: function(value, index, values) {
-                                    // Custom tick label to show dynamic unit
-                                    // 'this' refers to the scale instance
-                                    const unit = this.options.unit || ''; 
-                                    return `${value} ${unit.replace('/s', '')}`; // Remove /s for Y-axis tick
+                                    // Dynamically format Y-axis labels to show appropriate unit (B/s, KB/s, MB/s, GB/s)
+                                    if (value === 0) return '0 B/s';
+                                    const k = 1024;
+                                    const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s', 'TB/s'];
+                                    const i = Math.floor(Math.log(value) / Math.log(k));
+                                    return parseFloat((value / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
                                 }
                             }
                         }
                     },
                     plugins: {
                         legend: { display: false },
-                        tooltip: { 
+                        tooltip: {
                             enabled: true,
                             callbacks: {
                                 label: function(context) {
-                                    // Custom tooltip label to show dynamic unit
                                     let label = context.dataset.label || '';
                                     if (label) {
                                         label += ': ';
                                     }
                                     const value = context.parsed.y;
-                                    const unit = context.chart.options.scales.y.unit || ''; // Get unit from y-axis options
-                                    return label + `${value} ${unit}`;
+                                    // Use the same formatting logic for tooltip as for Y-axis ticks
+                                    if (value === 0) return label + '0 B/s';
+                                    const k = 1024;
+                                    const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s', 'TB/s'];
+                                    const i = Math.floor(Math.log(value) / Math.log(k));
+                                    return label + `${parseFloat((value / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
                                 }
                             }
                         }
                     }
                 };
 
-                // Initialize download chart
                 downloadChartInstance = new Chart(downloadCtx, {
                     type: 'line',
                     data: {
                         labels: networkHistory.labels,
                         datasets: [{
-                            label: '下载速度', // Label for tooltip
+                            label: '下载速度',
                             data: networkHistory.download,
-                            borderColor: '#06b6d4', // Cyan 500
+                            borderColor: '#06b6d4',
                             backgroundColor: 'rgba(6, 182, 212, 0.2)',
                             fill: true,
                             tension: 0.1,
                             pointRadius: 0
                         }]
                     },
-                    options: {
-                        ...commonChartOptions,
-                        scales: {
-                            ...commonChartOptions.scales,
-                            y: {
-                                ...commonChartOptions.scales.y,
-                                unit: 'B/s' // Initial unit for download Y-axis
-                            }
-                        }
-                    }
+                    options: commonChartOptions // Use commonChartOptions directly for both
                 });
 
                 uploadChartInstance = new Chart(uploadCtx, {
@@ -939,64 +1075,30 @@
                     data: {
                         labels: networkHistory.labels,
                         datasets: [{
-                            label: '上传速度', // Label for tooltip
+                            label: '上传速度',
                             data: networkHistory.upload,
-                            borderColor: '#ef4444', // Red 500
+                            borderColor: '#ef4444',
                             backgroundColor: 'rgba(239, 68, 68, 0.2)',
                             fill: true,
                             tension: 0.1,
                             pointRadius: 0
                         }]
                     },
-                    options: {
-                        ...commonChartOptions,
-                        scales: {
-                            ...commonChartOptions.scales,
-                            y: {
-                                ...commonChartOptions.scales.y,
-                                unit: 'B/s' // Initial unit for upload Y-axis
-                            }
-                        }
-                    }
+                    options: commonChartOptions // Use commonChartOptions directly for both
                 });
             }
 
-            // Function to dynamically format speed for charts and update chart titles
-            function formatSpeedForChart(bytes) {
-                if (bytes === 0) return { value: 0, unit: 'B/s', rawValue: 0 };
-                const k = 1024;
-                const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s', 'TB/s'];
-                let i = 0;
-                while (bytes >= k && i < sizes.length - 1) {
-                    bytes /= k;
-                    i++;
-                }
-                return { value: parseFloat(bytes.toFixed(2)), unit: sizes[i], rawValue: bytes };
-            }
-
-            // Function to update chart data
+            // Function to update chart data (simplified as unit conversion is now in Chart.js callback)
             function updateDetailCharts(server) {
-                const rawDownloadBytes = server.net ? server.net.down : 0;
-                const rawUploadBytes = server.net ? server.net.up : 0;
+                // raw data is already in B/s from agent.sh
+                const rawDownloadBytesPerSecond = server.net ? server.net.down : 0;
+                const rawUploadBytesPerSecond = server.net ? server.net.up : 0;
 
-                const formattedDownload = formatSpeedForChart(rawDownloadBytes);
-                const formattedUpload = formatSpeedForChart(rawUploadBytes);
-
-                // Update chart titles without units, as unit is now in Y-axis
-                const downloadChartTitleElement = document.getElementById('downloadChartTitle');
-                if (downloadChartTitleElement) downloadChartTitleElement.textContent = `下载速度`;
-
-                const uploadChartTitleElement = document.getElementById('uploadChartTitle');
-                if (uploadChartTitleElement) uploadChartTitleElement.textContent = `上传速度`;
-
-
-                // Remove oldest data point and add new data point
                 networkHistory.download.shift();
                 networkHistory.upload.shift();
-                networkHistory.download.push(formattedDownload.rawValue); // Push raw value for consistent Y-axis scaling
-                networkHistory.upload.push(formattedUpload.rawValue);
+                networkHistory.download.push(rawDownloadBytesPerSecond);
+                networkHistory.upload.push(rawUploadBytesPerSecond);
 
-                // Update labels to show relative time (e.g., -5s, -4s, ..., 0s)
                 networkHistory.labels = Array.from({length: chartDataPoints}, (_, i) => {
                     const diff = chartDataPoints - 1 - i;
                     if (diff === 0) return '0s';
@@ -1005,10 +1107,7 @@
                 });
 
                 if (downloadChartInstance && uploadChartInstance) {
-                    // Update Y-axis unit for the charts (used by the callback function)
-                    downloadChartInstance.options.scales.y.unit = formattedDownload.unit;
-                    uploadChartInstance.options.scales.y.unit = formattedUpload.unit;
-
+                    // Update data directly, Chart.js Y-axis callback will handle unit formatting
                     downloadChartInstance.data.labels = networkHistory.labels;
                     downloadChartInstance.data.datasets[0].data = networkHistory.download;
                     downloadChartInstance.update();
@@ -1023,25 +1122,28 @@
             document.getElementById('serverSettingsForm').addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const serverId = document.getElementById('settingServerId').value;
-                const settingsPassword = document.getElementById('settingsPassword').value; // Get password
+                const settingsPassword = document.getElementById('settingsPassword').value;
 
                 if (!settingsPassword) {
                     showMessage('Input Error', 'Please enter agent installation password!');
                     return;
                 }
 
-                // Get expiration date, set to null if empty
                 const expirationDateInput = document.getElementById('settingExpirationDate').value;
-                // Ensure date is in 'YYYY-MM-DD' format if not null
                 const expirationDate = expirationDateInput ? expirationDateInput : null;
+
+                const totalTrafficLimitGB = parseFloat(document.getElementById('settingTotalTrafficLimit').value);
+                const trafficCalculationMode = document.getElementById('settingTrafficCalculationMode').value;
 
 
                 const settings = {
                     totalNetUp: parseFloat(document.getElementById('settingTotalNetUp').value) * GB_IN_BYTES,
                     totalNetDown: parseFloat(document.getElementById('settingTotalNetDown').value) * GB_IN_BYTES,
                     resetDay: parseInt(document.getElementById('settingResetDay').value),
-                    password: settingsPassword, // Add password to request body
-                    expirationDate: expirationDate // Add expiration date
+                    password: settingsPassword,
+                    expirationDate: expirationDate,
+                    totalTrafficLimit: totalTrafficLimitGB, // Pass GB directly
+                    trafficCalculationMode: trafficCalculationMode
                 };
 
                 try {
@@ -1052,7 +1154,7 @@
                     });
                     if (response.ok) {
                         showMessage('Success', 'Settings updated successfully!');
-                        settingsModal.style.display = 'none';
+                        if (settingsModal) settingsModal.style.display = 'none';
                         fetchAndRenderServers();
                     } else {
                         const errorText = await response.text();
@@ -1062,7 +1164,7 @@
                     showMessage('Request Failed', `Request failed: ${error.message}`);
                 }
             });
-            
+
             document.getElementById('deleteServerForm').addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const serverId = document.getElementById('deleteServerId').value;
@@ -1080,9 +1182,9 @@
                     });
 
                     if (response.ok) {
-                        showMessage('Success', 'Server deleted successfully!\nPlease note: To completely remove this server, please run the agent uninstallation command on the corresponding physical server.');
-                        deleteModal.style.display = 'none';
-                        document.getElementById('deletePassword').value = '';
+                        showMessage('Success', 'Server deleted successfully!\nPlease note: To completely remove this server, please run the agent uninstallation command on the corresponding physical physical server.');
+                        if (deleteModal) deleteModal.style.display = 'none';
+                        if (document.getElementById('deletePassword')) document.getElementById('deletePassword').value = '';
                         fetchAndRenderServers();
                     } else {
                         const errorText = await response.text();
