@@ -2,7 +2,7 @@
 
 # =================================================================
 #
-#          一键式服务器监控面板安装/卸载/更新脚本 v1.7 (定制版)
+#          一键式服务器监控面板安装/卸载/更新脚本 v1.8 (定制版)
 #
 # =================================================================
 
@@ -117,67 +117,57 @@ install_server() {
         exit 1
     fi
     
-    # 3. 配置Nginx
-    echo "--> 正在配置Nginx反向代理..."
+    # 3. 部署前端 (强制更新) - Deploy frontend first as it's needed for Certbot's webroot challenge
+    echo "--> 正在部署/更新前端面板..."
+    sudo mkdir -p /var/www/monitor-frontend
+    sudo curl -s -L "https://raw.githubusercontent.com/cjap111/vps-monitor-panel/main/frontend/index.html" -o /var/www/monitor-frontend/index.html
+    # 替换前端HTML中的API_ENDPOINT，使其指向当前域名
+    sudo sed -i "s|https://monitor.yourdomain.com/api|https://$DOMAIN/api|g" /var/www/monitor-frontend/index.html
+
+    # Ensure /var/www/certbot exists for Certbot webroot challenge
+    sudo mkdir -p /var/www/certbot
+    sudo chown -R www-data:www-data /var/www/certbot # Ensure Nginx user can write
+
+    # 4. Configure Nginx for Certbot HTTP challenge
+    echo "--> 正在配置Nginx HTTP服务用于Certbot验证..."
     NGINX_CONF="/etc/nginx/sites-available/$DOMAIN"
     sudo tee "$NGINX_CONF" > /dev/null <<EOF
 server {
     listen 80;
     server_name $DOMAIN;
-    return 301 https://\$host\$request_uri; # 强制 HTTP 跳转到 HTTPS
-}
 
-server {
-    listen 443 ssl;
-    server_name $DOMAIN;
-
-    # Certbot 默认的证书路径
-    ssl_certificate /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
-
-    # 推荐的 SSL 协议和密码套件，增强安全性
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
-    ssl_prefer_server_ciphers on;
-
-    root /var/www/monitor-frontend; # 前端文件的根目录
-    index index.html; # 默认索引文件
-
-    location /api {
-        proxy_pass http://127.0.0.1:3000; # 将 /api 请求代理到 Node.js 后端
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host \$host;
-        proxy_cache_bypass \$http_upgrade;
-        # 增加代理超时设置，防止后端响应慢导致连接关闭
-        proxy_connect_timeout 600;
-        proxy_send_timeout 600;
-        proxy_read_timeout 600;
+    # Certbot's well-known location for HTTP-01 challenge
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
     }
-    
+
+    # Redirect all other HTTP traffic to HTTPS later
     location / {
-        # 对于前端路由，将所有未找到的文件和目录的请求重定向到 index.html
-        try_files \$uri \$uri/ /index.html; 
+        return 301 https://\$host\$request_uri;
     }
 }
 EOF
-    # 移除旧域名对应的 Nginx 符号链接（如果域名发生变化）
+    # Remove old domain's Nginx symlink if domain changed
     if [ -n "$OLD_DOMAIN_FROM_ENV" ] && [ "$OLD_DOMAIN_FROM_ENV" != "$DOMAIN" ] && [ -f "/etc/nginx/sites-enabled/$OLD_DOMAIN_FROM_ENV" ]; then
         echo "--> 检测到域名更改，正在移除旧Nginx符号链接..."
         sudo rm -f "/etc/nginx/sites-enabled/$OLD_DOMAIN_FROM_ENV"
     fi
     sudo ln -s -f "$NGINX_CONF" /etc/nginx/sites-enabled/
+    echo "--> 测试Nginx配置 (HTTP Only)..."
     sudo nginx -t
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}错误：Nginx HTTP配置测试失败。请检查您的Nginx配置。${NC}"
+        exit 1
+    fi
+    sudo systemctl restart nginx # Restart Nginx to pick up HTTP config for Certbot
 
-    # 4. 获取SSL证书 (如果证书不存在或需要续订)
+    # 5. Get SSL certificate (if not existing and valid)
     echo "--> 正在为 $DOMAIN 获取或续订SSL证书..."
 
-    # 检查 Certbot 是否已为该域名配置 HTTPS
-    # Certbot 0.28 及以后版本会在证书成功部署后，自动修改 Nginx 配置文件添加 443 端口配置
+    # Check if certificate already exists and is valid
     if sudo certbot certificates -d "$DOMAIN" | grep -q "VALID"; then
         echo -e "${GREEN}检测到现有有效的SSL证书，跳过新证书申请。Certbot会自动处理续订。${NC}"
-        EMAIL="${OLD_EMAIL}" # 如果有旧邮箱，则保留
+        EMAIL="${OLD_EMAIL}" # If old email exists, keep it
     else
         local EMAIL_INPUT=""
         if [ -n "$OLD_EMAIL" ]; then
@@ -192,24 +182,78 @@ EOF
             read -p "请输入您的邮箱地址 (用于Let's Encrypt证书续订提醒): " EMAIL_INPUT
         fi
 
-        EMAIL="${EMAIL_INPUT:-$OLD_EMAIL}" # 使用新输入，如果没有则回退到旧邮箱
+        EMAIL="${EMAIL_INPUT:-$OLD_EMAIL}" # Use new input, fallback to old if empty
         if [ -z "$EMAIL" ]; then
             echo -e "${RED}错误：邮箱地址不能为空！申请SSL证书需要提供邮箱。${NC}"
-            exit 1 # 邮箱是申请新证书的必要条件
+            exit 1 # Email is mandatory for new certificate application
         fi
 
-        # 注意：此处移除了 --redirect 参数，因为我们已经在Nginx配置中手动添加了跳转
-        sudo certbot --nginx --agree-tos --non-interactive -m "$EMAIL" -d "$DOMAIN"
+        # Attempt to obtain certificate using --nginx authenticator.
+        # This command will automatically configure Nginx to serve the challenge.
+        echo "--> 运行Certbot获取证书..."
+        if ! sudo certbot --nginx --agree-tos --non-interactive -m "$EMAIL" -d "$DOMAIN"; then
+            echo -e "${RED}错误：Certbot未能成功获取或更新SSL证书。请检查您的域名解析（A/AAAA记录）和网络连接。${NC}"
+            echo -e "您可以在手动运行 'sudo certbot --nginx -d $DOMAIN' 来尝试诊断问题。"
+            exit 1
+        fi
+        echo -e "${GREEN}Certbot证书获取/更新成功！${NC}"
     fi
 
-    # 5. 部署前端 (强制更新)
-    echo "--> 正在部署/更新前端面板..."
-    sudo mkdir -p /var/www/monitor-frontend
-    sudo curl -s -L "https://raw.githubusercontent.com/cjap111/vps-monitor-panel/main/frontend/index.html" -o /var/www/monitor-frontend/index.html
-    # 替换前端HTML中的API_ENDPOINT，使其指向当前域名
-    sudo sed -i "s|https://monitor.yourdomain.com/api|https://$DOMAIN/api|g" /var/www/monitor-frontend/index.html
+    # 6. Now, configure Nginx for full HTTPS with the obtained certificates
+    echo "--> 正在配置Nginx HTTPS服务..."
+    sudo tee "$NGINX_CONF" > /dev/null <<EOF
+server {
+    listen 80;
+    server_name $DOMAIN;
+    return 301 https://\$host\$request_uri; # Force HTTP to HTTPS redirection
+}
+
+server {
+    listen 443 ssl http2; # Enable HTTP/2
+    server_name $DOMAIN;
+
+    ssl_certificate /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers on;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+    ssl_stapling on;
+    ssl_stapling_verify on;
+    resolver 8.8.8.8 8.8.4.4 valid=300s;
+    resolver_timeout 5s;
+
+    root /var/www/monitor-frontend; # Frontend files root directory
+    index index.html; # Default index file
+
+    location /api {
+        proxy_pass http://127.0.0.1:3000; # Proxy /api requests to Node.js backend
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_cache_bypass \$http_upgrade;
+        proxy_connect_timeout 600;
+        proxy_send_timeout 600;
+        proxy_read_timeout 600;
+    }
+
+    location / {
+        try_files \$uri \$uri/ /index.html;
+    }
+}
+EOF
+    echo "--> 测试Nginx配置 (HTTPS Enabled)..."
+    sudo nginx -t
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}错误：Nginx HTTPS配置测试失败。请检查配置。${NC}"
+        exit 1
+    fi
+    sudo systemctl restart nginx # Final restart to pick up HTTPS config
     
-    # 6. 部署后端 (强制更新)
+    # 7. 部署后端 (强制更新)
     echo "--> 正在部署/更新后端API服务..."
     sudo mkdir -p /opt/monitor-backend
     cd /opt/monitor-backend
@@ -218,7 +262,7 @@ EOF
     echo "--> 正在安装/更新后端依赖..."
     sudo npm install
 
-    # 7. 创建或更新环境变量文件
+    # 8. 创建或更新环境变量文件
     echo "--> 正在配置/更新后端环境变量..."
     sudo tee "$BACKEND_ENV_FILE" > /dev/null <<EOF
 DELETE_PASSWORD=$DEL_PASSWORD
@@ -227,7 +271,7 @@ DOMAIN=$DOMAIN # 显式保存域名到 .env 文件
 ${EMAIL:+CERTBOT_EMAIL=$EMAIL} # 如果邮箱已设置，则保存到 .env
 EOF
 
-    # 8. 创建或更新Systemd服务
+    # 9. 创建或更新Systemd服务
     echo "--> 正在创建/更新后台运行服务..."
     sudo tee /etc/systemd/system/monitor-backend.service > /dev/null <<EOF
 [Unit]
@@ -249,9 +293,6 @@ EOF
     sudo systemctl enable monitor-backend > /dev/null 2>&1
     sudo systemctl restart monitor-backend
 
-    # 9. 重启Nginx
-    sudo systemctl restart nginx
-    
     echo -e "${GREEN}=====================================================${NC}"
     echo -e "${GREEN}          服务端安装/更新成功! 🎉${NC}"
     echo -e "您的监控面板地址: ${YELLOW}https://$DOMAIN${NC}"
@@ -460,6 +501,7 @@ uninstall_server() {
     # 5. 删除前端文件
     echo "--> 正在删除前端文件..."
     sudo rm -rf /var/www/monitor-frontend
+    sudo rm -rf /var/www/certbot # Remove certbot webroot directory
 
     # 6. 重载Systemd并重启Nginx
     echo "--> 正在重载服务并重启Nginx..."
