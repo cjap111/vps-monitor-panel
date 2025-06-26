@@ -4,6 +4,7 @@
 #
 #          一键式服务器监控面板安装/卸载/更新脚本 v1.9
 #          修复了重新安装清除流量数据的问题和EOF错误
+#          并优化了SSL证书的自动配置和npm命令的执行
 #
 # =================================================================
 
@@ -116,7 +117,8 @@ EOF"
 
     # 4. 配置 SSL (Certbot)
     echo "--> 正在配置 SSL 证书 (Certbot)..."
-    read -p "是否为您的域名配置SSL证书？(y/N): " INSTALL_SSL
+    # 自动同意安装SSL证书，不再需要手动选择
+    INSTALL_SSL="y" 
     if [[ "$INSTALL_SSL" == "y" || "$INSTALL_SSL" == "Y" ]]; then
         sudo certbot --nginx --non-interactive --agree-tos --email admin@$DOMAIN_INPUT -d $DOMAIN_INPUT
         if [ $? -ne 0 ]; then
@@ -148,14 +150,12 @@ EOF"
     sudo find "$BACKEND_DIR/" -maxdepth 1 -mindepth 1 ! -name 'server_data.json' -exec rm -rf {} +
 
     sudo cp -r "$TEMP_DIR/backend/"* "$BACKEND_DIR"
-    # 如果 backend 目录没有 server.js 和 package.json，则单独复制
-    sudo cp "$TEMP_DIR/server.js" "$BACKEND_DIR/server.js"
-    sudo cp "$TEMP_DIR/package.json" "$BACKEND_DIR/package.json"
+    # 移除了多余的 cp 命令，因为 server.js 和 package.json 应该已经通过 cp -r "$TEMP_DIR/backend/"* "$BACKEND_DIR" 被正确复制。
     
     echo "    - 后端文件复制完成。"
 
     echo "--> 正在安装后端依赖..."
-    (cd "$BACKEND_DIR" && sudo npm install)
+    (cd "$BACKEND_DIR" && sudo /usr/bin/npm install) # 明确指定 npm 的完整路径
     if [ $? -ne 0 ]; then
         echo -e "${RED}错误：后端依赖安装失败。请检查 npm 或网络连接。${NC}"
         exit 1
@@ -208,7 +208,7 @@ EOF"
 
     echo -e "${GREEN}=====================================================${NC}"
     echo -e "${GREEN}      服务端 (前端 + 后端) 安装/更新成功！            ${NC}"
-    echo -e "${GREEN}      请访问 http://$DOMAIN_INPUT 查看监控面板。       ${NC}"
+    echo -e "${GREEN}      请访问 https://$DOMAIN_INPUT 查看监控面板。       ${NC}"
     echo -e "${GREEN}=====================================================${NC}"
 }
 
