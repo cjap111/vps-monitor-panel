@@ -2,7 +2,7 @@
 
 # =================================================================
 #
-#          一键式服务器监控面板安装/卸载/更新脚本 v1.9 (定制版)
+#          一键式服务器监控面板安装/卸载/更新脚本 v1.9
 #
 # =================================================================
 
@@ -10,7 +10,7 @@
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m' # 修正：移除了多余的反斜杠
-NC='\033[0m' # No Color - 修复了这里的反斜杠，使其能正确重置颜色
+NC='\\033[0m' # No Color - 修复了这里的反斜杠，使其能正确重置颜色
 
 # --- 脚本欢迎信息 ---
 echo -e "${GREEN}=====================================================${NC}"
@@ -289,6 +289,11 @@ EOF
     echo "--> 正在安装/更新后端依赖..."
     sudo npm install
 
+    # IMPORTANT NOTE: The 'server_data.json' file, which stores accumulated traffic data,
+    # is NOT deleted during a normal 'install_server' (update) operation.
+    # It will persist across updates. However, running 'uninstall_server' WILL delete it.
+    # If you wish to manually backup your data, copy /opt/monitor-backend/server_data.json before uninstallation.
+
     # 8. Create or update environment file
     echo "--> 正在配置/更新后端环境变量..."
     sudo tee "$BACKEND_ENV_FILE" > /dev/null <<EOF
@@ -499,7 +504,7 @@ uninstall_server() {
         exit 1
     fi
 
-    echo -e "${RED}警告：此操作将删除所有服务端相关文件和服务，但会保留SSL证书。${NC}"
+    echo -e "${RED}警告：此操作将删除所有服务端相关文件和服务，包括流量统计数据，但会保留SSL证书。${NC}"
     read -p "您确定要继续吗? [y/N]: " CONFIRM
     if [[ "$CONFIRM" != "y" ]]; then
         echo "操作已取消。"
@@ -513,7 +518,8 @@ uninstall_server() {
     
     # 2. Delete backend files and service file
     echo "--> 正在删除后端文件..."
-    sudo rm -rf /opt/monitor-backend
+    # This command removes the entire /opt/monitor-backend directory, including server_data.json
+    sudo rm -rf /opt/monitor-backend 
     sudo rm -f /etc/systemd/system/monitor-backend.service
     
     # 3. Stop Nginx
