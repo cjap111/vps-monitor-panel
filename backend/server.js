@@ -55,6 +55,12 @@ try {
                 serverDataStore[id].resetMinute = 0; // Default to 0 minutes
                 console.warn(`[${new Date().toISOString()}] Initialized missing resetMinute for server ${id} on startup.`);
             }
+            // Initialize lastReset to a valid format if it's missing or old
+            if (!serverDataStore[id].lastReset || !/^\d{4}-\d{1,2}$/.test(serverDataStore[id].lastReset)) {
+                const now = new Date();
+                serverDataStore[id].lastReset = `${now.getFullYear()}-${now.getMonth() + 1}`;
+                console.warn(`[${new Date().toISOString()}] Initialized/Corrected lastReset format for server ${id} on startup.`);
+            }
         });
         saveData(); // Save updated structure if any initialization happened
     }
@@ -149,6 +155,12 @@ app.post('/api/report', (req, res) => {
         }
         if (existingData.resetMinute === undefined) {
             existingData.resetMinute = 0;
+        }
+        // Ensure lastReset is present and correctly formatted
+        if (!existingData.lastReset || !/^\d{4}-\d{1,2}$/.test(existingData.lastReset)) {
+            const now = new Date();
+            existingData.lastReset = `${now.getFullYear()}-${now.getMonth() + 1}`;
+            console.warn(`[${new Date().toISOString()}] Corrected lastReset format for existing server ${id}.`);
         }
     }
 
@@ -308,42 +320,73 @@ app.post('/api/verify-agent-password', (req, res) => {
 // Traffic reset check function - Runs every minute to reset monthly traffic
 function checkAndResetTraffic() {
     // Get current date and time in Shanghai timezone
+    // IMPORTANT: Ensure the backend server's system timezone is set to Asia/Shanghai for reliability.
     const nowInShanghai = new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' });
     const currentShanghaiDate = new Date(nowInShanghai);
+    const currentYearShanghai = currentShanghaiDate.getFullYear();
+    const currentMonthShanghai = currentShanghaiDate.getMonth(); // 0-indexed month
     const currentDayShanghai = currentShanghaiDate.getDate();
     const currentHourShanghai = currentShanghaiDate.getHours();
     const currentMinuteShanghai = currentShanghaiDate.getMinutes();
-    const currentMonthYearShanghai = `${currentShanghaiDate.getFullYear()}-${currentShanghaiDate.getMonth() + 1}`;
+    const currentMonthYearShanghai = `${currentYearShanghai}-${currentMonthShanghai + 1}`;
 
     let changed = false;
 
-    console.log(`[${new Date().toISOString()}] Running minute-by-minute traffic reset check for Shanghai time (${currentDayShanghai}日 ${currentHourShanghai}点${currentMinuteShanghai}分)...`);
+    console.log(`[${new Date().toISOString()}] Running minute-by-minute traffic reset check for Shanghai time (${currentDayShanghai}日 ${currentHourShanghai}点${currentMinuteShanghai}分, Month: ${currentMonthShanghai + 1})...`);
 
     Object.keys(serverDataStore).forEach(id => {
         const server = serverDataStore[id];
 
+        // Ensure server.lastReset is correctly parsed or initialized for comparison
+        let lastResetMonth = -1;
+        let lastResetYear = -1;
+        if (server.lastReset && typeof server.lastReset === 'string') {
+            const parts = server.lastReset.split('-');
+            if (parts.length === 2) {
+                lastResetYear = parseInt(parts[0]);
+                lastResetMonth = parseInt(parts[1]) - 1; // Convert to 0-indexed month
+            }
+        }
+
         // Construct the target reset date object for the current month
-        const targetResetDate = new Date(currentShanghaiDate.getFullYear(),
-                                         currentShanghaiDate.getMonth(),
+        // Use current year and month for the target reset date's month, so it correctly falls within the current billing cycle
+        const targetResetDate = new Date(currentYearShanghai,
+                                         currentMonthShanghai, // Use current month for target date
                                          server.resetDay,
                                          server.resetHour,
                                          server.resetMinute,
                                          0); // Seconds to 0 for precise comparison
 
-        // Check if the current time has passed or is exactly the configured reset time for the current month.
+
+        // Condition 1: Check if the current time has passed or is exactly the configured reset time for the current month.
         // This makes the reset more robust against slight timing inaccuracies of setInterval.
         const hasPassedOrIsResetTime = currentShanghaiDate.getTime() >= targetResetDate.getTime();
 
-        // Condition for reset:
-        // 1. The current time has passed or is exactly the configured reset time.
-        // 2. The server has not yet been reset for the current month (checked via lastReset string).
-        if (hasPassedOrIsResetTime && server.lastReset !== currentMonthYearShanghai) {
+        // Condition 2: Check if the reset hasn't happened yet for the current month/year.
+        // This is crucial for monthly reset logic.
+        const notYetResetForCurrentMonth = !(lastResetYear === currentYearShanghai && lastResetMonth === currentMonthShanghai);
+
+        // Additional robustness for cases where the server might have been offline during the exact reset time
+        // If current month is after the last reset month (or current year is after last reset year), it should reset.
+        const monthHasChangedSinceLastReset = (currentYearShanghai > lastResetYear) ||
+                                             (currentYearShanghai === lastResetYear && currentMonthShanghai > lastResetMonth);
+
+        console.log(`[${new Date().toISOString()}] Server ${id} - Configured: Day ${server.resetDay}, Hour ${server.resetHour}, Minute ${server.resetMinute}.`);
+        console.log(`[${new Date().toISOString()}] Server ${id} - Current Shanghai: Year ${currentYearShanghai}, Month ${currentMonthShanghai + 1}, Day ${currentDayShanghai}, Hour ${currentHourShanghai}, Minute ${currentMinuteShanghai}.`);
+        console.log(`[${new Date().toISOString()}] Server ${id} - Last Reset: ${server.lastReset || 'N/A'}.`);
+        console.log(`[${new Date().toISOString()}] Server ${id} - Has passed reset time (${targetResetDate.toISOString()}): ${hasPassedOrIsResetTime}.`);
+        console.log(`[${new Date().toISOString()}] Server ${id} - Not yet reset for current month: ${notYetResetForCurrentMonth}.`);
+        console.log(`[${new Date().toISOString()}] Server ${id} - Month has changed since last reset: ${monthHasChangedSinceLastReset}.`);
+
+
+        // Main reset logic
+        if (notYetResetForCurrentMonth && (hasPassedOrIsResetTime || monthHasChangedSinceLastReset)) {
             console.log(`[${new Date().toISOString()}] Resetting traffic for server ${id} as per configured time...`);
             server.totalNet = { up: 0, down: 0 };
             server.lastReset = currentMonthYearShanghai;
             changed = true;
         } else {
-            console.log(`[${new Date().toISOString()}] Server ${id}: No reset needed. Configured: Day ${server.resetDay}, Hour ${server.resetHour}, Minute ${server.resetMinute}. Current Shanghai: Day ${currentDayShanghai}, Hour ${currentHourShanghai}, Minute ${currentMinuteShanghai}. Last reset: ${server.lastReset}. Has passed reset time: ${hasPassedOrIsResetTime}.`);
+            console.log(`[${new Date().toISOString()}] Server ${id}: No reset needed.`);
         }
     });
 
