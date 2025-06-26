@@ -1,272 +1,536 @@
 // server.js
-require('dotenv').config();
+require('dotenv').config(); // Load environment variables at the top of the file
 const express = require('express');
 const cors = require('cors');
-const fs = require('fs');
-const path = require('path');
+const fs = require('fs'); // Import fs module
+const path = require('path'); // Import path module
 const app = express();
 const PORT = 3000;
 
-// 从环境变量读取密码
+// Read passwords from environment variables
 const DELETE_PASSWORD = process.env.DELETE_PASSWORD;
-const AGENT_INSTALL_PASSWORD = process.env.AGENT_INSTALL_PASSWORD;
+const AGENT_INSTALL_PASSWORD = process.env.AGENT_INSTALL_PASSWORD; // Agent installation password
 
 if (!DELETE_PASSWORD || !AGENT_INSTALL_PASSWORD) {
-    console.error("错误: 环境变量中未设置 DELETE_PASSWORD 或 AGENT_INSTALL_PASSWORD！");
+    console.error("Error: DELETE_PASSWORD or AGENT_INSTALL_PASSWORD not set in environment variables!");
     process.exit(1);
 }
 
-// --- 数据持久化 ---
+// --- Data Persistence ---
 const DB_FILE = path.join(__dirname, 'server_data.json');
-let serverDataStore = {};
+let serverDataStore = {}; // Initialize as empty object
 
-// 启动时加载数据
+// Load data on startup
 try {
     if (fs.existsSync(DB_FILE)) {
-        const data = fs.readFileSync(DB_File, 'utf8');
-        const loadedData = JSON.parse(data);
-        serverDataStore = loadedData;
-        console.log(`[${new Date().toISOString()}] 数据成功从 ${DB_FILE} 加载。`);
+        const data = fs.readFileSync(DB_FILE, 'utf8');
+        // Attempt to parse. If parsing fails, serverDataStore remains empty,
+        // and a new empty store will effectively be used for the session,
+        // preventing a crash due to malformed JSON.
+        const loadedData = JSON.parse(data); 
+        serverDataStore = loadedData; // Only assign if JSON parsing is successful
+        console.log(`[${new Date().toISOString()}] Data successfully loaded from ${DB_FILE}.`);
         
-        // 修复：确保旧数据在加载时具有所有必需的字段，防止出错
+        // Ensure old data has rawTotalNet and totalNet initialized correctly on load if missing
+        // This is crucial to ensure data structure consistency before any operations.
         Object.keys(serverDataStore).forEach(id => {
-            const server = serverDataStore[id];
-            if (!server.rawTotalNet) server.rawTotalNet = { up: 0, down: 0 };
-            if (!server.totalNet) server.totalNet = { up: 0, down: 0 };
-            if (server.totalTrafficLimit === undefined) server.totalTrafficLimit = 0;
-            if (!server.trafficCalculationMode) server.trafficCalculationMode = 'bidirectional';
-            if (server.resetDay === undefined) server.resetDay = 1;
-            if (server.resetHour === undefined) server.resetHour = 0;
-            if (server.resetMinute === undefined) server.resetMinute = 0;
-            if (server.lastReset === undefined || server.lastReset === null) {
-                // 为没有 lastReset 的旧服务器设置一个合理的初始值
+            if (!serverDataStore[id].rawTotalNet) {
+                serverDataStore[id].rawTotalNet = { up: 0, down: 0 };
+                console.warn(`[${new Date().toISOString()}] Initialized missing rawTotalNet for server ${id} on startup.`);
+            }
+            if (!serverDataStore[id].totalNet) {
+                serverDataStore[id].totalNet = { up: 0, down: 0 };
+                console.warn(`[${new Date().toISOString()}] Initialized missing totalNet for server ${id} on startup.`);
+            }
+            if (serverDataStore[id].totalTrafficLimit === undefined) {
+                serverDataStore[id].totalTrafficLimit = 0;
+            }
+            if (serverDataStore[id].trafficCalculationMode === undefined) {
+                serverDataStore[id].trafficCalculationMode = 'bidirectional';
+            }
+            if (serverDataStore[id].resetDay === undefined) {
+                serverDataStore[id].resetDay = 1;
+            }
+            if (serverDataStore[id].resetHour === undefined) {
+                serverDataStore[id].resetHour = 0;
+            }
+            if (serverDataStore[id].resetMinute === undefined) {
+                serverDataStore[id].resetMinute = 0;
+            }
+            if (serverDataStore[id].uptimeSeconds === undefined) {
+                serverDataStore[id].uptimeSeconds = 0;
+            }
+            if (serverDataStore[id].lastUpdated === undefined) {
+                 serverDataStore[id].lastUpdated = Date.now(); // Initialize lastUpdated if missing
+            }
+
+
+            // Handle 'lastReset' initialization/conversion:
+            // This block handles cases where 'lastReset' might be missing or in an old string format.
+            // It ensures 'lastReset' is always a timestamp and is set to a logical point relative to current time
+            // and the server's configured reset schedule, preventing immediate unintended resets on startup
+            // or missed resets if the backend was down for a long period.
+            if (typeof serverDataStore[id].lastReset === 'string') {
+                const [year, month] = serverDataStore[id].lastReset.split('-').map(Number);
+                const prevResetDay = serverDataStore[id].resetDay || 1;
+                const prevResetHour = serverDataStore[id].resetHour || 0;
+                const prevResetMinute = serverDataStore[id].resetMinute || 0;
+                serverDataStore[id].lastReset = new Date(year, month - 1, prevResetDay, prevResetHour, prevResetMinute, 0, 0).getTime();
+                console.warn(`[${new Date().toISOString()}] Converted old lastReset string to timestamp for server ${id}.`);
+            } else if (serverDataStore[id].lastReset === undefined || serverDataStore[id].lastReset === null || isNaN(serverDataStore[id].lastReset)) {
+                const sResetDay = serverDataStore[id].resetDay || 1;
+                const sResetHour = serverDataStore[id].resetHour || 0;
+                const sResetMinute = serverDataStore[id].resetMinute || 0;
+
                 const now = new Date();
-                const resetDateThisMonth = new Date(now.getFullYear(), now.getMonth(), server.resetDay, server.resetHour, server.resetMinute);
-                if (now < resetDateThisMonth) {
-                    // 如果本月重置日还没到，则将上次重置时间设为上个月的重置日
-                    server.lastReset = new Date(now.getFullYear(), now.getMonth() - 1, server.resetDay, server.resetHour, server.resetMinute).getTime();
+                const currentYear = now.getFullYear();
+                const currentMonth = now.getMonth();
+
+                const currentMonthResetDate = new Date(currentYear, currentMonth, sResetDay, sResetHour, sResetMinute, 0, 0);
+                const prevMonthResetDate = new Date(currentYear, currentMonth - 1, sResetDay, sResetHour, sResetMinute, 0, 0);
+
+                if (now.getTime() >= currentMonthResetDate.getTime()) {
+                    serverDataStore[id].lastReset = currentMonthResetDate.getTime();
                 } else {
-                    // 如果本月重置日已过，则设为本月的重置日
-                    server.lastReset = resetDateThisMonth.getTime();
+                    serverDataStore[id].lastReset = prevMonthResetDate.getTime();
                 }
+                console.warn(`[${new Date().toISOString()}] Initialized missing/invalid lastReset for server ${id} on startup to: ${new Date(serverDataStore[id].lastReset).toISOString()}.`);
             }
         });
-
+        saveData(); // Save updated structure if any initialization/conversion happened
     } else {
-        console.log(`[${new Date().toISOString()}] 未找到数据文件 ${DB_FILE}。将使用空数据存储启动。`);
+        console.log(`[${new Date().toISOString()}] No existing data file ${DB_FILE} found. Starting with an empty server data store.`);
     }
 } catch (err) {
-    console.error(`[${new Date().toISOString()}] 从文件 ${DB_FILE} 加载或解析数据时出错:`, err);
-    serverDataStore = {}; // 如果加载失败，确保从空状态开始
+    console.error(`[${new Date().toISOString()}] Error loading or parsing data from file ${DB_FILE}:`, err);
+    console.error(`[${new Date().toISOString()}] Data file might be corrupted. Continuing with an empty in-memory store.`);
+    serverDataStore = {}; // Ensure serverDataStore is empty if load/parse failed
 }
 
-// 保存数据到文件
+// Save data to file
 function saveData() {
     try {
         fs.writeFileSync(DB_FILE, JSON.stringify(serverDataStore, null, 2));
+        console.log(`[${new Date().toISOString()}] Data successfully saved to ${DB_FILE}.`); // Added log
     } catch (err) {
-        console.error(`[${new Date().toISOString()}] 保存数据到文件 ${DB_FILE} 时出错:`, err);
+        console.error(`[${new Date().toISOString()}] Error saving data to file ${DB_FILE}:`, err);
     }
 }
-// --- 结束数据持久化 ---
+// --- End Data Persistence ---
 
 app.use(cors());
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({limit: '1mb'}));
+app.use(express.urlencoded({ extended: true, limit: '1mb' })); // Add urlencoded middleware for robustness
 
-// --- 路由 ---
+// --- Routes ---
 
-// POST /api/report - 从Agent接收监控数据
-app.post('/api/report', (req, res) => {
-    const data = req.body;
-    if (!data.id) {
-        return res.status(400).send('需要服务器ID。');
-    }
-
-    const now = Date.now();
-    let existingData = serverDataStore[data.id];
-
-    // 修复：改进了数据更新逻辑，以保留现有流量统计
-    if (!existingData) {
-        // 如果是新服务器，则初始化所有数据
-        const now = new Date();
-        const resetDay = data.resetDay !== undefined ? data.resetDay : 1;
-        const resetHour = data.resetHour !== undefined ? data.resetHour : 0;
-        const resetMinute = data.resetMinute !== undefined ? data.resetMinute : 0;
-        const resetDateThisMonth = new Date(now.getFullYear(), now.getMonth(), resetDay, resetHour, resetMinute);
-        let lastReset;
-        if (now < resetDateThisMonth) {
-            lastReset = new Date(now.getFullYear(), now.getMonth() - 1, resetDay, resetHour, resetMinute).getTime();
-        } else {
-            lastReset = resetDateThisMonth.getTime();
-        }
-
-        existingData = {
-            ...data,
-            rawTotalNet: { up: data.rawTotalNet.up, down: data.rawTotalNet.down },
-            totalNet: { up: 0, down: 0 }, // 新服务器流量从0开始
-            resetDay: resetDay,
-            resetHour: resetHour,
-            resetMinute: resetMinute,
-            lastReset: lastReset,
-            lastUpdated: now,
-            online: true,
-            totalTrafficLimit: 0,
-            trafficCalculationMode: 'bidirectional'
-        };
-        console.log(`[${new Date().toISOString()}] 添加新服务器 ${data.id}。`);
-    } else {
-        // 如果是现有服务器，则只更新动态数据，保留累计流量和设置
-        let upBytesSinceLast = 0;
-        let downBytesSinceLast = 0;
-
-        // 处理网卡计数器重置（例如服务器重启）
-        if (data.rawTotalNet.up < existingData.rawTotalNet.up) {
-            upBytesSinceLast = data.rawTotalNet.up; // 计数器重置，增量就是当前值
-        } else {
-            upBytesSinceLast = data.rawTotalNet.up - existingData.rawTotalNet.up;
-        }
-
-        if (data.rawTotalNet.down < existingData.rawTotalNet.down) {
-            downBytesSinceLast = data.rawTotalNet.down;
-        } else {
-            downBytesSinceLast = data.rawTotalNet.down - existingData.rawTotalNet.down;
-        }
-        
-        // 更新累计流量
-        existingData.totalNet.up += Math.max(0, upBytesSinceLast);
-        existingData.totalNet.down += Math.max(0, downBytesSinceLast);
-
-        // 更新服务器的其他信息
-        existingData = {
-            ...existingData, // 保留旧设置，如 resetDay, totalTrafficLimit等
-            ...data, // 使用新上报的动态数据覆盖
-            totalNet: existingData.totalNet, // 明确保留更新后的累计流量
-            rawTotalNet: { up: data.rawTotalNet.up, down: data.rawTotalNet.down }, // 更新原始计数器以备下次比较
-            lastUpdated: now,
-            online: true,
-        };
-    }
-
-    serverDataStore[data.id] = existingData;
-    saveData();
-    res.status(200).send('报告已收到。');
+// A simple root route to check if the backend is alive
+app.get('/', (req, res) => {
+    console.log(`[${new Date().toISOString()}] Root path accessed.`);
+    res.status(200).send('Monitor Backend is running!');
 });
 
-// GET /api/servers - 为前端获取所有服务器数据
-app.get('/api/servers', (req, res) => {
+// POST /api/report - Receive monitoring data from agents
+app.post('/api/report', (req, res) => {
+    const data = req.body;
+    console.log(`[${new Date().toISOString()}] Received report from server ID: ${data.id}`);
+
+    if (!data.id) {
+        console.error(`[${new Date().toISOString()}] Error: Server ID is required for report.`);
+        return res.status(400).send('Server ID is required.');
+    }
+
     const now = Date.now();
-    // 检查在线状态，15秒内无更新则视为离线
+    const currentYear = new Date().getFullYear();
+    const currentMonth = new Date().getMonth(); // 0-indexed
+    let existingData = serverDataStore[data.id];
+
+    // Initialize server data if it's a new server or core data structures are missing
+    if (!existingData) {
+        // Calculate initial lastReset to ensure first reset happens correctly
+        const resetDayForNewServer = data.resetDay !== undefined ? data.resetDay : 1;
+        const resetHourForNewServer = data.resetHour !== undefined ? data.resetHour : 0;
+        const resetMinuteForNewServer = data.resetMinute !== undefined ? data.resetMinute : 0;
+
+        // Determine the initial lastReset based on current time and desired reset point
+        // If current time is past the reset point for the current month, set lastReset to this month's reset point.
+        // Otherwise, set it to the previous month's reset point to ensure a reset happens this month.
+        const currentMonthResetDate = new Date(currentYear, currentMonth, resetDayForNewServer, resetHourForNewServer, resetMinuteForNewServer, 0, 0);
+        const prevMonthResetDate = new Date(currentYear, currentMonth - 1, resetDayForNewServer, resetHourForNewServer, resetMinuteForNewServer, 0, 0);
+
+        let initialLastReset;
+        if (now >= currentMonthResetDate.getTime()) {
+            initialLastReset = currentMonthResetDate.getTime();
+        } else {
+            initialLastReset = prevMonthResetDate.getTime();
+        }
+
+        existingData = {
+            id: data.id,
+            name: data.name,
+            location: data.location,
+            os: data.os,
+            cpu: data.cpu,
+            mem: data.mem,
+            disk: data.disk,
+            net: data.net, // Current network speed
+            rawTotalNet: { up: data.rawTotalNet ? data.rawTotalNet.up : 0, down: data.rawTotalNet ? data.rawTotalNet.down : 0 }, // Initialize with current raw data, handle potential undefined
+            totalNet: { up: 0, down: 0 }, // Initialize accumulated total traffic
+            resetDay: resetDayForNewServer, // Default reset day
+            resetHour: resetHourForNewServer, // Default reset hour (00:00)
+            resetMinute: resetMinuteForNewServer, // Default reset minute (00:00)
+            lastReset: initialLastReset, // Use the calculated initial lastReset
+            uptimeSeconds: data.uptimeSeconds || 0, // Store agent's reported uptime
+            lastUpdated: now,
+            online: true,
+            expirationDate: null,
+            cpuModel: data.cpuModel || null,
+            memModel: data.memModel || null,
+            diskModel: data.diskModel || null,
+            totalTrafficLimit: 0, // Initialize new field for total traffic limit
+            trafficCalculationMode: 'bidirectional' // Default to bidirectional
+        };
+        console.log(`[${new Date().toISOString()}] New server ${data.id} added with initial lastReset: ${new Date(initialLastReset).toISOString()}.`);
+    } else {
+        // Ensure existing data has rawTotalNet and totalNet for calculations
+        // This is important if an old server_data.json didn't have these fields
+        if (!existingData.rawTotalNet) {
+            existingData.rawTotalNet = { up: 0, down: 0 };
+            console.warn(`[${new Date().toISOString()}] Initialized missing rawTotalNet for existing server ${data.id} during report.`);
+        }
+        if (!existingData.totalNet) {
+            existingData.totalNet = { up: 0, down: 0 };
+            console.warn(`[${new Date().toISOString()}] Initialized missing totalNet for existing server ${data.id} during report.`);
+        }
+        // Ensure new fields are present for existing servers loaded from file
+        if (existingData.totalTrafficLimit === undefined) {
+            existingData.totalTrafficLimit = 0;
+            console.warn(`[${new Date().toISOString()}] Initialized missing totalTrafficLimit for existing server ${data.id} during report.`);
+        }
+        if (existingData.trafficCalculationMode === undefined) {
+            existingData.trafficCalculationMode = 'bidirectional';
+            console.warn(`[${new Date().toISOString()}] Initialized missing trafficCalculationMode for existing server ${data.id} during report.`);
+        }
+        if (existingData.resetDay === undefined) {
+            existingData.resetDay = 1;
+            console.warn(`[${new Date().toISOString()}] Initialized missing resetDay for existing server ${data.id} during report.`);
+        }
+        if (existingData.resetHour === undefined) {
+            existingData.resetHour = 0;
+            console.warn(`[${new Date().toISOString()}] Initialized missing resetHour for existing server ${data.id} during report.`);
+        }
+        if (existingData.resetMinute === undefined) {
+            existingData.resetMinute = 0;
+            console.warn(`[${new Date().toISOString()}] Initialized missing resetMinute for existing server ${data.id} during report.`);
+        }
+        // If lastReset was an old format string or undefined/null/NaN, convert it to a timestamp for consistency
+        if (typeof existingData.lastReset === 'string') {
+             const [year, month] = existingData.lastReset.split('-').map(Number);
+            const prevResetDay = existingData.resetDay || 1;
+            const prevResetHour = existingData.resetHour || 0;
+            const prevResetMinute = existingData.resetMinute || 0;
+            existingData.lastReset = new Date(year, month - 1, prevResetDay, prevResetHour, prevResetMinute, 0, 0).getTime();
+            console.warn(`[${new Date().toISOString()}] Converted old lastReset string to timestamp for server ${data.id}.`);
+        } else if (existingData.lastReset === undefined || existingData.lastReset === null || isNaN(existingData.lastReset)) {
+            // For servers that never had lastReset set, initialize it to the previous month's reset point
+            // or current month's if already passed. This prevents immediate reset on startup if data existed.
+            const sResetDay = existingData.resetDay || 1;
+            const sResetHour = existingData.resetHour || 0;
+            const sResetMinute = existingData.resetMinute || 0;
+
+            const now = new Date();
+            const currentYear = now.getFullYear();
+            const currentMonth = now.getMonth();
+
+            const currentMonthResetDate = new Date(currentYear, currentMonth, sResetDay, sResetHour, sResetMinute, 0, 0);
+            const prevMonthResetDate = new Date(currentYear, currentMonth - 1, sResetDay, sResetHour, sResetMinute, 0, 0);
+
+            if (now.getTime() >= currentMonthResetDate.getTime()) {
+                existingData.lastReset = currentMonthResetDate.getTime();
+            } else {
+                existingData.lastReset = prevMonthResetDate.getTime();
+            }
+            console.warn(`[${new Date().toISOString()}] Initialized missing/invalid lastReset for server ${data.id} during report to: ${new Date(existingData.lastReset).toISOString()}.`);
+        }
+        // Ensure uptimeSeconds is present for existing servers
+        if (existingData.uptimeSeconds === undefined) {
+            existingData.uptimeSeconds = 0;
+            console.warn(`[${new Date().toISOString()}] Initialized missing uptimeSeconds for existing server ${data.id} during report.`);
+        }
+    }
+
+    let upBytesSinceLast = 0;
+    let downBytesSinceLast = 0;
+
+    // Log raw counters before calculation for debugging
+    console.log(`[${new Date().toISOString()}] Server ${data.id} - Raw Traffic Incoming: Up=${data.rawTotalNet.up}, Down=${data.rawTotalNet.down}`);
+    console.log(`[${new Date().toISOString()}] Server ${data.id} - Raw Traffic Existing: Up=${existingData.rawTotalNet.up}, Down=${existingData.rawTotalNet.down}`);
+
+    // Traffic calculation logic for accumulated data:
+    // If current raw counter is less than last known raw counter, assume agent reset/reboot.
+    // In this case, the current raw counter represents the traffic since the reboot,
+    // so we add the current raw value as the increment for this specific interval.
+    if (data.rawTotalNet.up < existingData.rawTotalNet.up) {
+        console.warn(`[${new Date().toISOString()}] Server ${data.id}: Upload raw counter reset detected. Adding current reported raw value as increment.`);
+        upBytesSinceLast = data.rawTotalNet.up;
+    } else {
+        upBytesSinceLast = data.rawTotalNet.up - existingData.rawTotalNet.up;
+    }
+
+    if (data.rawTotalNet.down < existingData.rawTotalNet.down) {
+        console.warn(`[${new Date().toISOString()}] Server ${data.id}: Download raw counter reset detected. Adding current reported raw value as increment.`);
+        downBytesSinceLast = data.rawTotalNet.down;
+    } else {
+        downBytesSinceLast = data.rawTotalNet.down - existingData.rawTotalNet.down;
+    }
+
+    // Ensure increments are non-negative (traffic should not decrease)
+    upBytesSinceLast = Math.max(0, upBytesSinceLast);
+    downBytesSinceLast = Math.max(0, downBytesSinceLast);
+
+    // Add increments to total traffic
+    existingData.totalNet.up += upBytesSinceLast;
+    existingData.totalNet.down += downBytesSinceLast;
+
+    // Log increments and new total for debugging
+    console.log(`[${new Date().toISOString()}] Server ${data.id} - Increments: Up=${upBytesSinceLast}, Down=${downBytesSinceLast}`);
+    console.log(`[${new Date().toISOString()}] Server ${data.id} - New Total Traffic: Up=${existingData.totalNet.up}, Down=${existingData.totalNet.down}`);
+
+
+    // Update serverDataStore with all latest information
+    serverDataStore[data.id] = {
+        ...existingData, // Preserve existing accumulated data and settings
+        id: data.id, // Explicitly set ID
+        name: data.name, // Update these fields from agent data
+        location: data.location,
+        os: data.os,
+        cpu: data.cpu,
+        mem: data.mem,
+        disk: data.disk,
+        net: data.net, // Current network speed
+        cpuModel: data.cpuModel || existingData.cpuModel, // Update if new, preserve if not
+        memModel: data.memModel || existingData.memModel, // Update if new, preserve if not
+        diskModel: data.diskModel || existingData.diskModel, // Update if new, preserve if not
+        totalNet: existingData.totalNet, // Explicitly keep the updated totalNet
+        rawTotalNet: { up: data.rawTotalNet.up, down: data.rawTotalNet.down }, // Crucial: Update rawTotalNet for the next comparison
+        uptimeSeconds: data.uptimeSeconds || existingData.uptimeSeconds, // Update with agent's reported uptime
+        lastUpdated: now, // Always update lastUpdated timestamp
+        online: true, // Mark as online
+        // totalTrafficLimit, trafficCalculationMode, resetDay, resetHour, resetMinute are preserved from existingData or initialized above
+    };
+
+    saveData(); // Save data to file
+    res.status(200).send('Report received.');
+});
+
+// GET /api/servers - Get all server data for the frontend
+app.get('/api/servers', (req, res) => {
+    console.log(`[${new Date().toISOString()}] Request received for server list.`);
+    const now = Date.now();
+    // Check online status for all servers - adjusted to 15 seconds threshold for 1-second reporting for better tolerance
     Object.values(serverDataStore).forEach(server => {
+        // If no update for more than 15 seconds, consider offline
         server.online = (now - server.lastUpdated) < 15000;
     });
     res.json(Object.values(serverDataStore));
 });
 
-// POST /api/servers/:id/settings - 更新服务器设置
+// POST /api/servers/:id/settings - Update server settings (requires agent installation password)
 app.post('/api/servers/:id/settings', (req, res) => {
     const { id } = req.params;
-    const { password, ...settings } = req.body;
+    // Destructure new fields: totalTrafficLimit and trafficCalculationMode
+    const { totalNetUp, totalNetDown, resetDay, resetHour, resetMinute, password, expirationDate, totalTrafficLimit, trafficCalculationMode } = req.body;
 
-    if (password !== AGENT_INSTALL_PASSWORD) {
-        return res.status(403).send('被控端安装密码不正确。');
+    console.log(`[${new Date().toISOString()}] Received settings update for server ID: ${id}.`);
+    console.log(`[${new Date().toISOString()}] New settings: totalTrafficLimit=${totalTrafficLimit}, trafficCalculationMode=${trafficCalculationMode}, resetDay=${resetDay}, resetHour=${resetHour}, resetMinute=${resetMinute}.`);
+
+
+    // Validate agent installation password
+    if (!password || password !== AGENT_INSTALL_PASSWORD) {
+        console.error(`[${new Date().toISOString()}] Invalid agent installation password for server ${id} settings.`);
+        return res.status(403).send('Incorrect agent installation password.');
     }
 
     if (serverDataStore[id]) {
-        // 如果重置设置有变化，则重新计算 lastReset
         const server = serverDataStore[id];
-        if (server.resetDay !== settings.resetDay || server.resetHour !== settings.resetHour || server.resetMinute !== settings.resetMinute) {
+        const oldTotalNetUp = server.totalNet.up;
+        const oldTotalNetDown = server.totalNet.down;
+        const oldResetDay = server.resetDay;
+        const oldResetHour = server.resetHour;
+        const oldResetMinute = server.resetMinute;
+
+        server.totalNet.up = totalNetUp;
+        server.totalNet.down = totalNetDown;
+        server.resetDay = resetDay;
+        server.resetHour = resetHour;
+        server.resetMinute = resetMinute;
+        server.expirationDate = expirationDate;
+        server.totalTrafficLimit = totalTrafficLimit;
+        server.trafficCalculationMode = trafficCalculationMode;
+
+        // Determine if traffic was manually reset (totalNet changed) or if reset settings changed
+        const trafficManuallyReset = (oldTotalNetUp !== totalNetUp || oldTotalNetDown !== totalNetDown);
+        const resetSettingsChanged = (oldResetDay !== resetDay || oldResetHour !== resetHour || Math.abs(oldResetMinute - resetMinute) > 1); // 1 minute tolerance for minute change
+
+        // If traffic was manually reset or reset settings changed, re-evaluate lastReset.
+        // This ensures the 'lastReset' timestamp accurately reflects the point from which
+        // the next traffic reset cycle should be calculated.
+        if (trafficManuallyReset || resetSettingsChanged) {
+            console.log(`[${new Date().toISOString()}] Server ${id}: Traffic manually reset or reset settings changed. Re-evaluating lastReset.`);
             const now = new Date();
-            const resetDateThisMonth = new Date(now.getFullYear(), now.getMonth(), settings.resetDay, settings.resetHour, settings.resetMinute);
-            if (now < resetDateThisMonth) {
-                settings.lastReset = new Date(now.getFullYear(), now.getMonth() - 1, settings.resetDay, settings.resetHour, settings.resetMinute).getTime();
+            const currentYear = now.getFullYear();
+            const currentMonth = now.getMonth();
+
+            // Calculate the exact target reset date for the current month based on NEW settings
+            const currentMonthNewResetDate = new Date(currentYear, currentMonth, resetDay, resetHour, resetMinute, 0, 0);
+            
+            // Calculate the exact target reset date for the previous month based on NEW settings
+            const prevMonthNewResetDate = new Date(currentYear, currentMonth - 1, resetDay, resetHour, resetMinute, 0, 0);
+
+            // Determine the appropriate lastReset timestamp:
+            // If current time is past or at the new reset point for THIS month,
+            // then the "last reset" is effectively THIS month's reset point.
+            if (now.getTime() >= currentMonthNewResetDate.getTime()) {
+                server.lastReset = currentMonthNewResetDate.getTime();
+                console.log(`[${new Date().toISOString()}] Server ${id}: lastReset set to current month's new reset time (past): ${new Date(server.lastReset).toISOString()}.`);
             } else {
-                settings.lastReset = resetDateThisMonth.getTime();
+                // If current time is BEFORE this month's reset point,
+                // then the "last reset" should be the PREVIOUS month's reset point,
+                // so that the current month's reset triggers when its time comes.
+                server.lastReset = prevMonthNewResetDate.getTime();
+                console.log(`[${new Date().toISOString()}] Server ${id}: lastReset set to previous month's new reset time (future current month reset): ${new Date(server.lastReset).toISOString()}.`);
             }
         }
-        
-        serverDataStore[id] = { ...server, ...settings };
-        saveData();
-        res.status(200).send('设置更新成功。');
+
+        saveData(); // Save data
+        console.log(`[${new Date().toISOString()}] Server ${id} settings updated successfully.`);
+        res.status(200).send('Settings updated successfully.');
     } else {
-        res.status(404).send('未找到服务器。');
+        console.error(`[${new Date().toISOString()}] Server ${id} not found for settings update.`);
+        res.status(404).send('Server not found.');
     }
 });
 
-// DELETE /api/servers/:id - 删除服务器
+// DELETE /api/servers/:id - Delete a server (requires delete password)
 app.delete('/api/servers/:id', (req, res) => {
     const { id } = req.params;
     const { password } = req.body;
 
+    console.log(`[${new Date().toISOString()}] Received delete request for server ID: ${id}.`);
+
+    if (!password) {
+        console.error(`[${new Date().toISOString()}] Password required for deleting server ${id}.`);
+        return res.status(400).send('Password required.');
+    }
     if (password !== DELETE_PASSWORD) {
-        return res.status(403).send('删除密码不正确。');
+        console.error(`[${new Date().toISOString()}] Incorrect password for deleting server ${id}.`);
+        return res.status(403).send('Incorrect password.');
     }
 
     if (serverDataStore[id]) {
         delete serverDataStore[id];
-        saveData();
-        res.status(200).send('服务器删除成功。');
+        saveData(); // Save data
+        console.log(`[${new Date().toISOString()}] Server ${id} deleted.`);
+        res.status(200).send('Server deleted successfully.');
     } else {
-        res.status(404).send('未找到服务器。');
+        console.error(`[${new Date().toISOString()}] Server ${id} not found for deletion.`);
+        res.status(404).send('Server not found.');
     }
 });
 
-// POST /api/verify-agent-password - 验证被控端安装密码
+// POST /api/verify-agent-password - Verify the agent installation password
 app.post('/api/verify-agent-password', (req, res) => {
     const { password } = req.body;
-    if (password === AGENT_INSTALL_PASSWORD) {
-        res.status(200).send('被控端安装密码正确。');
+    console.log(`[${new Date().toISOString()}] Received agent password verification request.`);
+    if (password && password === AGENT_INSTALL_PASSWORD) {
+        res.status(200).send('Agent installation password correct.');
+        console.log(`[${new Date().toISOString()}] Agent installation password verified successfully.`);
     } else {
-        res.status(403).send('无效的被控端安装密码。');
+        res.status(403).send('Invalid agent installation password.');
+        console.warn(`[${new Date().toISOString()}] Invalid agent installation password provided.`);
     }
 });
 
-// 修复：重写流量重置检查函数，逻辑更清晰可靠
+// Traffic reset check function - Runs hourly to reset monthly traffic
 function checkAndResetTraffic() {
     const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth(); // 0-indexed
+    const currentDay = now.getDate();
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+
     let changed = false;
 
-    console.log(`\n[${now.toISOString()}] 正在运行每小时流量重置检查...`);
+    console.log(`\n[${new Date().toISOString()}] Running hourly traffic reset check... Current time: ${String(currentYear).padStart(4, '0')}-${String(currentMonth + 1).padStart(2, '0')}-${String(currentDay).padStart(2, '0')} ${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`);
 
     Object.keys(serverDataStore).forEach(id => {
         const server = serverDataStore[id];
-        if (server.lastReset === undefined || server.lastReset === null) return; // 跳过没有设置的
 
-        const lastResetDate = new Date(server.lastReset);
-        const resetDay = server.resetDay || 1;
-        const resetHour = server.resetHour || 0;
-        const resetMinute = server.resetMinute || 0;
+        // Default values for reset if not set
+        const resetDay = server.resetDay !== undefined ? server.resetDay : 1;
+        const resetHour = server.resetHour !== undefined ? server.resetHour : 0;
+        const resetMinute = server.resetMinute !== undefined ? server.resetMinute : 0;
 
-        // 计算下一次重置的准确时间点
-        let nextResetDate = new Date(lastResetDate.getFullYear(), lastResetDate.getMonth(), resetDay, resetHour, resetMinute);
-        if (nextResetDate <= lastResetDate) {
-             // 如果计算出的下次重置时间小于等于上次重置时间，说明应该在下个月
-             nextResetDate.setMonth(nextResetDate.getMonth() + 1);
-        }
+        // Construct the target reset date for the current month based on configured settings
+        const targetResetDate = new Date(currentYear, currentMonth, resetDay, resetHour, resetMinute, 0, 0);
         
-        console.log(`  [服务器 ${id}] 上次重置: ${lastResetDate.toISOString()}, 下次计划重置: ${nextResetDate.toISOString()}`);
+        // Construct the target reset date for the *previous* month
+        // This is used as a reference point to ensure resets happen even if 'lastReset' is very old.
+        const prevMonthTargetResetDate = new Date(currentYear, currentMonth - 1, resetDay, resetHour, resetMinute, 0, 0);
 
-        if (now >= nextResetDate) {
-            console.log(`  -> 需要重置！当前时间已超过下次计划重置时间。`);
+        const lastResetTimestamp = typeof server.lastReset === 'number' ? server.lastReset : 0; // Ensure it's a number
+
+        console.log(`\n[${new Date().toISOString()}] Server ${id} - Detail for reset check:`);
+        console.log(`  Configured Reset: Day=${resetDay}, Hour=${resetHour}, Minute=${resetMinute}`);
+        console.log(`  Current Time (ms): ${now.getTime()} (${now.toISOString()})`);
+        console.log(`  Target Reset Date (ms): ${targetResetDate.getTime()} (${targetResetDate.toISOString()})`);
+        console.log(`  Previous Month Target Reset Date (ms): ${prevMonthTargetResetDate.getTime()} (${prevMonthTargetResetDate.toISOString()})`);
+        console.log(`  Last Reset Timestamp (ms): ${lastResetTimestamp} (${new Date(lastResetTimestamp).toISOString()})`);
+        
+        let shouldReset = false;
+        
+        // Primary reset condition:
+        // Current time is at or past the target reset time for this month,
+        // AND the last reset occurred *before* this month's target reset time.
+        if (now.getTime() >= targetResetDate.getTime() && lastResetTimestamp < targetResetDate.getTime()) {
+            shouldReset = true;
+            console.log(`  Reset Condition 1 Met: Current time has passed target reset time and last reset was before it.`);
+        } 
+        // Secondary reset condition (for edge cases, e.g., long downtime, old 'lastReset' values):
+        // If 'lastReset' is older than the *previous* month's target reset date,
+        // AND current time has passed *this* month's target reset date.
+        // This catches scenarios where the primary condition might be missed if 'lastReset' was too far in the past.
+        else if (lastResetTimestamp < prevMonthTargetResetDate.getTime() && now.getTime() >= targetResetDate.getTime()) {
+            shouldReset = true;
+            console.log(`  Reset Condition 2 Met: Last reset was very old, and current time has passed target reset time.`);
+        }
+
+        console.log(`  Final shouldReset for server ${id}: ${shouldReset}`);
+
+        if (shouldReset) {
+            console.log(`[${new Date().toISOString()}] Resetting traffic for server ${id}. Old totalNet: {up: ${server.totalNet.up}, down: ${server.totalNet.down}}. New totalNet will be 0.`);
             server.totalNet = { up: 0, down: 0 };
-            server.lastReset = now.getTime(); // 将lastReset更新为当前时间
+            server.lastReset = targetResetDate.getTime(); // Update lastReset to the exact reset point for this cycle
             changed = true;
+        } else {
+            console.log(`[${new Date().toISOString()}] Server ${id}: No traffic reset needed yet.`);
         }
     });
 
     if (changed) {
-        console.log(`[${now.toISOString()}] 流量重置完成，正在保存数据...`);
+        console.log(`[${new Date().toISOString()}] Traffic reset complete, saving data...`);
         saveData();
     } else {
-        console.log(`[${now.toISOString()}] 没有服务器需要重置流量。`);
+        console.log(`[${new Date().toISOString()}] No servers required traffic reset.`); // Added log
     }
 }
 
-
-// 启动服务器并设置每小时流量重置检查
+// Start the server and set up hourly traffic reset check
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[${new Date().toISOString()}] 监控后端服务器正在 http://0.0.0.0:${PORT} 上运行`);
-    // 每小时检查一次
-    setInterval(checkAndResetTraffic, 1000 * 60 * 60); 
-    // 启动时立即运行一次检查
+    console.log(`[${new Date().toISOString()}] Monitor backend server running on http://0.0.0.0:${PORT}`);
+    // Check for traffic reset hourly
+    setInterval(checkAndResetTraffic, 1000 * 60 * 60); // Check every hour
+    // Run check immediately on startup
     checkAndResetTraffic();
 });
