@@ -125,10 +125,8 @@ app.post('/api/report', (req, res) => {
 
         let initialLastReset;
         if (now >= currentMonthResetDate.getTime()) {
-            // If current time is past this month's reset point, set lastReset to this month's reset point
             initialLastReset = currentMonthResetDate.getTime();
         } else {
-            // If current time is before this month's reset point, set lastReset to last month's reset point
             initialLastReset = prevMonthResetDate.getTime();
         }
 
@@ -218,7 +216,7 @@ app.post('/api/report', (req, res) => {
     }
 
     if (data.rawTotalNet.down < existingData.rawTotalNet.down) {
-        console.warn(`[${new Date().toISOString()}] Server ${data.id}: Download raw counter reset detected. Adding current reported raw value as increment.`);
+        console.warn(`[${new Date().toISOString()}] Server ${id}: Download raw counter reset detected. Adding current reported raw value as increment.`);
         downBytesSinceLast = data.rawTotalNet.down;
     } else {
         downBytesSinceLast = data.rawTotalNet.down - existingData.rawTotalNet.down;
@@ -314,18 +312,13 @@ app.post('/api/servers/:id/settings', (req, res) => {
             const currentYear = now.getFullYear();
             const currentMonth = now.getMonth();
 
-            const currentMonthNewResetDate = new Date(currentYear, currentMonth, resetDay, resetHour, resetMinute, 0, 0);
             const prevMonthNewResetDate = new Date(currentYear, currentMonth - 1, resetDay, resetHour, resetMinute, 0, 0);
 
-            if (now.getTime() >= currentMonthNewResetDate.getTime()) {
-                // If current time is past the new reset point for this month, set lastReset to this month's new reset point
-                server.lastReset = currentMonthNewResetDate.getTime();
-                console.log(`[${new Date().toISOString()}] Server ${id}: lastReset set to current month's new reset time: ${new Date(server.lastReset).toISOString()}.`);
-            } else {
-                // If current time is before the new reset point for this month, set lastReset to last month's new reset point
-                server.lastReset = prevMonthNewResetDate.getTime();
-                console.log(`[${new Date().toISOString()}] Server ${id}: lastReset set to previous month's new reset time: ${new Date(server.lastReset).toISOString()}.`);
-            }
+            // Always set lastReset to the previous month's new reset time.
+            // This ensures that lastResetTimestamp < targetResetDate.getTime() holds true
+            // for the current month's reset target, allowing the reset to happen.
+            server.lastReset = prevMonthNewResetDate.getTime();
+            console.log(`[${new Date().toISOString()}] Server ${id}: lastReset adjusted to previous month's new reset time: ${new Date(server.lastReset).toISOString()}.`);
         }
 
         saveData(); // Save data
