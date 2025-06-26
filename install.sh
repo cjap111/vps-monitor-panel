@@ -10,7 +10,7 @@
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m' # 修正：移除了多余的反斜杠
-NC='\033[0m' # No Color
+NC='\\033[0m' # No Color
 
 # --- 脚本欢迎信息 ---
 echo -e "${GREEN}=====================================================${NC}"
@@ -164,32 +164,48 @@ EOF
     # 5. Get SSL certificate (if not existing and valid)
     echo "--> 正在为 $DOMAIN 获取或续订SSL证书..."
 
+    local EMAIL_TO_USE=""
+    # First, determine the email to use for Certbot
+    if [ -n "$OLD_EMAIL" ]; then
+        read -p "检测到旧邮箱地址: ${OLD_EMAIL}。是否继续使用此邮箱? (y/N): " USE_OLD_EMAIL_PROMPT
+        if [[ "$USE_OLD_EMAIL_PROMPT" == "y" || "$USE_OLD_EMAIL_PROMPT" == "Y" ]]; then
+            EMAIL_TO_USE="$OLD_EMAIL"
+            echo "继续使用邮箱: $EMAIL_TO_USE"
+        else
+            read -p "请输入您的邮箱地址 (用于Let's Encrypt证书续订提醒): " EMAIL_TO_USE_INPUT
+            EMAIL_TO_USE="$EMAIL_TO_USE_INPUT"
+        fi
+    else
+        read -p "请输入您的邮箱地址 (用于Let's Encrypt证书续订提醒): " EMAIL_TO_USE
+    fi
+
+    if [ -z "$EMAIL_TO_USE" ]; then
+        echo -e "${RED}错误：邮箱地址不能为空！申请SSL证书需要提供邮箱。${NC}"
+        exit 1 # Email is mandatory for new certificate application
+    fi
+    EMAIL="$EMAIL_TO_USE" # Set global EMAIL for the script to use
+
+    # Try to register the account explicitly first, if it's not already registered
+    # This step is crucial to handle "Unable to register an account"
+    echo "--> 尝试注册或更新Certbot账户..."
+    if ! sudo certbot register --email "$EMAIL" --agree-tos --non-interactive --no-eff-email; then
+        # Check if the error is due to an existing account
+        if sudo certbot accounts | grep -q "$EMAIL"; then
+            echo -e "${GREEN}Certbot账户已存在，继续。${NC}"
+        else
+            echo -e "${RED}错误：Certbot账户注册失败。请检查您的邮箱地址或网络连接。${NC}"
+            echo -e "如果问题持续存在，请访问Let's Encrypt社区获取帮助。"
+            exit 1
+        fi
+    else
+        echo -e "${GREEN}Certbot账户注册/更新成功！${NC}"
+    fi
+
+    # Now, attempt to obtain or renew the certificate
     # Check if certificate already exists and is valid
     if sudo certbot certificates -d "$DOMAIN" | grep -q "VALID"; then
         echo -e "${GREEN}检测到现有有效的SSL证书，跳过新证书申请。Certbot会自动处理续订。${NC}"
-        EMAIL="${OLD_EMAIL}" # If old email exists, keep it
     else
-        local EMAIL_INPUT=""
-        if [ -n "$OLD_EMAIL" ]; then
-            read -p "检测到旧邮箱地址: ${OLD_EMAIL}。是否继续使用此邮箱? (y/N): " USE_OLD_EMAIL_PROMPT
-            if [[ "$USE_OLD_EMAIL_PROMPT" == "y" || "$USE_OLD_EMAIL_PROMPT" == "Y" ]]; then
-                EMAIL="$OLD_EMAIL"
-                echo "继续使用邮箱: $EMAIL"
-            else
-                read -p "请输入您的邮箱地址 (用于Let's Encrypt证书续订提醒): " EMAIL_INPUT
-            fi
-        else
-            read -p "请输入您的邮箱地址 (用于Let's Encrypt证书续订提醒): " EMAIL_INPUT
-        fi
-
-        EMAIL="${EMAIL_INPUT:-$OLD_EMAIL}" # Use new input, fallback to old if empty
-        if [ -z "$EMAIL" ]; then
-            echo -e "${RED}错误：邮箱地址不能为空！申请SSL证书需要提供邮箱。${NC}"
-            exit 1 # Email is mandatory for new certificate application
-        fi
-
-        # Attempt to obtain certificate using --nginx authenticator.
-        # This command will automatically configure Nginx to serve the challenge.
         echo "--> 运行Certbot获取证书..."
         if ! sudo certbot --nginx --agree-tos --non-interactive -m "$EMAIL" -d "$DOMAIN"; then
             echo -e "${RED}错误：Certbot未能成功获取或更新SSL证书。请检查您的域名解析（A/AAAA记录）和网络连接。${NC}"
