@@ -2,7 +2,7 @@
 
 # =================================================================
 #
-#          一键式服务器监控面板安装/卸载/更新脚本 v1.8 
+#          一键式服务器监控面板安装/卸载/更新脚本 v1.8 (定制版)
 #
 # =================================================================
 
@@ -185,20 +185,28 @@ EOF
     fi
     EMAIL="$EMAIL_TO_USE" # Set global EMAIL for the script to use
 
-    # Attempt account registration/update using --update-registration
-    echo "--> 尝试注册或更新Certbot账户..."
-    if ! sudo certbot register --email "$EMAIL" --agree-tos --non-interactive --no-eff-email --update-registration; then
-        echo -e "${RED}错误：Certbot账户注册或更新失败。请检查您的邮箱地址或网络连接。${NC}"
-        echo -e "如果问题持续存在，请访问Let's Encrypt社区获取帮助。"
-        exit 1
+    # Attempt account registration if not already registered.
+    # We remove --update-registration as it might not be supported on older Certbot versions.
+    echo "--> 尝试注册Certbot账户 (如果尚未注册)..."
+    # The 'register' command with --non-interactive might exit 1 if account already exists.
+    # We check if it already exists before trying to register.
+    if ! sudo certbot accounts | grep -q "$EMAIL"; then
+        if ! sudo certbot register --email "$EMAIL" --agree-tos --non-interactive --no-eff-email; then
+            echo -e "${RED}错误：Certbot账户注册失败。请检查您的邮箱地址或网络连接。${NC}"
+            echo -e "如果问题持续存在，请访问Let's Encrypt社区获取帮助。"
+            exit 1
+        else
+            echo -e "${GREEN}Certbot账户注册成功！${NC}"
+        fi
     else
-        echo -e "${GREEN}Certbot账户注册/更新成功！${NC}"
+        echo -e "${GREEN}Certbot账户已存在，继续。${NC}"
     fi
 
-    # Now, attempt to obtain or renew the certificate
-    # Check if certificate already exists and is valid
+
+    # Now, attempt to obtain or renew the certificate, or skip if valid one already exists
+    # Check if certificate already exists and is VALID for the domain
     if sudo certbot certificates -d "$DOMAIN" | grep -q "VALID"; then
-        echo -e "${GREEN}检测到现有有效的SSL证书，跳过新证书申请。Certbot会自动处理续订。${NC}"
+        echo -e "${GREEN}检测到现有有效的SSL证书已绑定到 ${DOMAIN}，跳过新证书申请。Certbot会自动处理续订。${NC}"
     else
         echo "--> 运行Certbot获取证书..."
         if ! sudo certbot --nginx --agree-tos --non-interactive -m "$EMAIL" -d "$DOMAIN"; then
