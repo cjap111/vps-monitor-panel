@@ -53,17 +53,20 @@ try {
             if (serverDataStore[id].resetMinute === undefined) {
                 serverDataStore[id].resetMinute = 0; // Default to 00:00
             }
-            // If lastReset was Guadeloupe-M, convert it to a timestamp for consistency
-            if (typeof serverDataStore[id].lastReset === 'string' && serverDataStore[id].lastReset.includes('-')) {
+            // If lastReset was an old format string (like "2024-05"), convert it to a timestamp for consistency
+            // Or if it's not set, initialize it to a past timestamp to ensure reset calculation works.
+            if (typeof serverDataStore[id].lastReset === 'string') {
                 const [year, month] = serverDataStore[id].lastReset.split('-').map(Number);
-                // Create a date object for the previous reset, using the stored resetDay/Hour/Minute
                 const prevResetDay = serverDataStore[id].resetDay || 1;
                 const prevResetHour = serverDataStore[id].resetHour || 0;
                 const prevResetMinute = serverDataStore[id].resetMinute || 0;
                 serverDataStore[id].lastReset = new Date(year, month - 1, prevResetDay, prevResetHour, prevResetMinute, 0, 0).getTime();
                 console.warn(`[${new Date().toISOString()}] Converted old lastReset string to timestamp for server ${id}.`);
             } else if (serverDataStore[id].lastReset === undefined) {
-                serverDataStore[id].lastReset = 0; // Initialize as 0 or some past timestamp if not set
+                // For servers that never had lastReset set, initialize it to a very old timestamp
+                // This ensures the first reset check will pass if current time is past the reset point.
+                serverDataStore[id].lastReset = 0; // Epoch time, guaranteeing it's before any real reset point
+                console.warn(`[${new Date().toISOString()}] Initialized missing lastReset to 0 for server ${id}.`);
             }
             // Ensure uptimeSeconds is initialized
             if (serverDataStore[id].uptimeSeconds === undefined) {
@@ -120,6 +123,9 @@ app.post('/api/report', (req, res) => {
         const resetHourForNewServer = data.resetHour !== undefined ? data.resetHour : 0;
         const resetMinuteForNewServer = data.resetMinute !== undefined ? data.resetMinute : 0;
 
+        // Determine the initial lastReset based on current time and desired reset point
+        // If current time is past the reset point for the current month, set lastReset to this month's reset point.
+        // Otherwise, set it to the previous month's reset point to ensure a reset happens this month.
         const currentMonthResetDate = new Date(currentYear, currentMonth, resetDayForNewServer, resetHourForNewServer, resetMinuteForNewServer, 0, 0);
         const prevMonthResetDate = new Date(currentYear, currentMonth - 1, resetDayForNewServer, resetHourForNewServer, resetMinuteForNewServer, 0, 0);
 
@@ -180,16 +186,17 @@ app.post('/api/report', (req, res) => {
         if (existingData.resetMinute === undefined) {
             existingData.resetMinute = 0;
         }
-        // If lastReset was Guadeloupe-M, convert it to a timestamp for consistency
-        if (typeof existingData.lastReset === 'string' && existingData.lastReset.includes('-')) {
-            const [year, month] = existingData.lastReset.split('-').map(Number);
+        // If lastReset was an old format string or undefined, convert it to a timestamp for consistency
+        if (typeof existingData.lastReset === 'string') {
+             const [year, month] = existingData.lastReset.split('-').map(Number);
             const prevResetDay = existingData.resetDay || 1;
             const prevResetHour = existingData.resetHour || 0;
             const prevResetMinute = existingData.resetMinute || 0;
             existingData.lastReset = new Date(year, month - 1, prevResetDay, prevResetHour, prevResetMinute, 0, 0).getTime();
             console.warn(`[${new Date().toISOString()}] Converted old lastReset string to timestamp for server ${data.id}.`);
         } else if (existingData.lastReset === undefined) {
-            existingData.lastReset = 0; // Initialize as 0 or some past timestamp if not set
+            existingData.lastReset = 0; // Epoch time to ensure first check passes
+            console.warn(`[${new Date().toISOString()}] Initialized missing lastReset to 0 for server ${data.id}.`);
         }
         // Ensure uptimeSeconds is present for existing servers
         if (existingData.uptimeSeconds === undefined) {
@@ -216,7 +223,7 @@ app.post('/api/report', (req, res) => {
     }
 
     if (data.rawTotalNet.down < existingData.rawTotalNet.down) {
-        console.warn(`[${new Date().toISOString()}] Server ${id}: Download raw counter reset detected. Adding current reported raw value as increment.`);
+        console.warn(`[${new Date().toISOString()}] Server ${data.id}: Download raw counter reset detected. Adding current reported raw value as increment.`);
         downBytesSinceLast = data.rawTotalNet.down;
     } else {
         downBytesSinceLast = data.rawTotalNet.down - existingData.rawTotalNet.down;
@@ -293,7 +300,7 @@ app.post('/api/servers/:id/settings', (req, res) => {
         const server = serverDataStore[id];
         const oldResetDay = server.resetDay;
         const oldResetHour = server.resetHour;
-        const oldResetMinute = server.resetMinute.toFixed(0); // Ensure minute is a fixed number for comparison
+        const oldResetMinute = server.resetMinute; // No need for toFixed(0), keep as number
 
         server.totalNet.up = totalNetUp;
         server.totalNet.down = totalNetDown;
@@ -306,10 +313,10 @@ app.post('/api/servers/:id/settings', (req, res) => {
         server.trafficCalculationMode = trafficCalculationMode;
 
         // Check if reset settings have changed, and if so, re-evaluate lastReset
-        // Also add a small tolerance (e.g., 5 minutes) to ensure that even if the minute changes slightly,
-        // we don't trigger unnecessary lastReset updates if the change is negligible.
-        const minuteDiff = Math.abs(oldResetMinute - resetMinute);
-        if (oldResetDay !== resetDay || oldResetHour !== resetHour || minuteDiff > 5) { // Adjusted comparison for minute
+        // Add a small tolerance (e.g., 1 minute = 60000ms) to avoid false positives for minute changes.
+        const resetSettingsChanged = (oldResetDay !== resetDay || oldResetHour !== resetHour || Math.abs(oldResetMinute - resetMinute) > 1); // 1 minute tolerance
+
+        if (resetSettingsChanged) {
             console.log(`[${new Date().toISOString()}] Server ${id}: Reset settings changed. Re-evaluating lastReset.`);
             const now = new Date();
             const currentYear = now.getFullYear();
@@ -321,15 +328,17 @@ app.post('/api/servers/:id/settings', (req, res) => {
             // Calculate the exact target reset date for the previous month
             const prevMonthNewResetDate = new Date(currentYear, currentMonth - 1, resetDay, resetHour, resetMinute, 0, 0);
 
-            // Determine the appropriate lastReset timestamp to ensure reset triggers correctly.
-            // If the current time is past the new reset point for the current month,
-            // set lastReset to that point. Otherwise, set it to the previous month's reset point.
+            // Determine the appropriate lastReset timestamp:
+            // If the current time is AT OR AFTER the new reset point for the current month,
+            // set lastReset to that point (this ensures the traffic will NOT reset immediately, but at the NEXT cycle).
+            // If the current time is BEFORE the new reset point for the current month,
+            // set lastReset to the PREVIOUS month's reset point (this ensures traffic WILL reset at the current cycle's reset time).
             if (now.getTime() >= currentMonthNewResetDate.getTime()) {
                 server.lastReset = currentMonthNewResetDate.getTime();
-                console.log(`[${new Date().toISOString()}] Server ${id}: lastReset set to current month's new reset time: ${new Date(server.lastReset).toISOString()}.`);
+                console.log(`[${new Date().toISOString()}] Server ${id}: lastReset set to current month's new reset time (past): ${new Date(server.lastReset).toISOString()}.`);
             } else {
                 server.lastReset = prevMonthNewResetDate.getTime();
-                console.log(`[${new Date().toISOString()}] Server ${id}: lastReset set to previous month's new reset time: ${new Date(server.lastReset).toISOString()}.`);
+                console.log(`[${new Date().toISOString()}] Server ${id}: lastReset set to previous month's new reset time (future): ${new Date(server.lastReset).toISOString()}.`);
             }
         }
 
@@ -406,60 +415,43 @@ function checkAndResetTraffic() {
         // Construct the target reset date for the current month
         const targetResetDate = new Date(currentYear, currentMonth, resetDay, resetHour, resetMinute, 0, 0);
         
-        // Also construct the target reset date for the *previous* month
+        // Construct the target reset date for the *previous* month
         const prevMonthTargetResetDate = new Date(currentYear, currentMonth - 1, resetDay, resetHour, resetMinute, 0, 0);
 
         // Convert server.lastReset to a number (timestamp) for reliable comparison
         const lastResetTimestamp = typeof server.lastReset === 'number' ? server.lastReset : 0;
 
-        // Condition for resetting:
-        // 1. Current time is at or after the target reset time for this month.
-        // 2. The server's lastReset timestamp is *before* the target reset time for this month.
-        //    OR the server's lastReset timestamp is *after* the current month's target reset date,
-        //    which implies it was reset *into* the current month from a future date due to a manual setting change.
-        //    In this specific case (where lastResetTimestamp > targetResetDate.getTime() but it's now after targetResetDate),
-        //    we should still reset if it hasn't been reset for *this specific reset point*.
-        
-        // A more robust check for reset:
-        // Reset if:
-        // a) The current time is past or at the target reset time for this month, AND
-        // b) The last reset recorded was BEFORE the current month's target reset time.
-        // This handles normal monthly resets.
-        // OR
-        // c) The last reset recorded was BEFORE the previous month's target reset time, AND
-        // d) The current time is past or at the current month's target reset time.
-        // This handles cases where the server was offline for a long time or lastReset was very old.
-        // The most critical part is ensuring that 'lastReset' is always before the 'targetResetDate'
-        // for the *current* cycle if a reset is due.
-
         let shouldReset = false;
         
-        // Scenario 1: Normal monthly reset
-        // If current time is past this month's reset, and last reset was before this month's reset point
+        // Scenario: The reset point for the current month has passed
+        // AND the last recorded reset was BEFORE the current month's reset point.
+        // This covers normal monthly resets.
         if (now.getTime() >= targetResetDate.getTime() && lastResetTimestamp < targetResetDate.getTime()) {
             shouldReset = true;
-            console.log(`[${new Date().toISOString()}] Server ${id}: Normal monthly reset triggered.`);
+            console.log(`[${new Date().toISOString()}] Server ${id}: Normal monthly reset triggered. (now >= target && lastReset < target)`);
         } 
-        // Scenario 2: Reset needed after settings change (lastReset might be in the future relative to prevMonthTargetResetDate)
-        // This covers cases where a user sets reset time to a future date in the current month,
-        // but traffic needs to reset for the current cycle as it's now past that time.
-        else if (lastResetTimestamp < prevMonthTargetResetDate.getTime() && now.getTime() >= targetResetDate.getTime()) {
-            shouldReset = true;
-            console.log(`[${new Date().toISOString()}] Server ${id}: Reset triggered due to old lastReset timestamp and current time past target.`);
+        // Scenario: The reset point for the current month has NOT yet passed,
+        // BUT the last recorded reset was BEFORE the previous month's reset point.
+        // This handles cases where a server was offline for a long time, or lastReset was very old,
+        // and it needs to reset for the current cycle as soon as the current month's reset point is reached.
+        else if (now.getTime() < targetResetDate.getTime() && lastResetTimestamp < prevMonthTargetResetDate.getTime()) {
+            shouldReset = true; // This means it will reset when the targetResetDate is reached later this month
+            console.log(`[${new Date().toISOString()}] Server ${id}: Reset due at future date, but last reset was very old. (now < target && lastReset < prevMonthTarget)`);
         }
-
+        // Scenario: Handle cases where lastReset was updated to a future date manually,
+        // but now the actual time has surpassed that manually set lastReset.
+        // If the current time is past the target, and lastReset is also past the target but was manually set later
+        // (i.e. lastReset was set to a point in the future, and now 'now' has passed that point but not the next actual reset point)
+        // This specific edge case logic might be less critical with the initialLastReset logic and strict comparisons.
+        // The most robust check is `lastResetTimestamp < targetResetDate.getTime()` for the current cycle.
 
         if (shouldReset) {
-            console.log(`[${new Date().toISOString()}] Resetting traffic for server ${id} (Target: ${targetResetDate.toISOString()})...`);
+            console.log(`[${new Date().toISOString()}] Resetting traffic for server ${id} (Target: ${new Date(targetResetDate).toISOString()})...`);
             server.totalNet = { up: 0, down: 0 };
-            server.lastReset = now.getTime(); // Update lastReset to current timestamp
+            server.lastReset = targetResetDate.getTime(); // Set lastReset to the exact reset point for the current month
             changed = true;
-        } else if (now.getTime() < targetResetDate.getTime()) {
-            // Log that we are waiting for the reset time if it's in the future
-            console.log(`[${new Date().toISOString()}] Server ${id}: Waiting for reset on ${resetDay}th ${String(resetHour).padStart(2, '0')}:${String(resetMinute).padStart(2, '0')}. Current lastReset: ${new Date(lastResetTimestamp).toISOString()}`);
         } else {
-            // Log that reset has already occurred for this month or it's not the reset day/time yet
-            console.log(`[${new Date().toISOString()}] Server ${id}: Traffic already reset for this month, or not yet the reset day/time. Current lastReset: ${new Date(lastResetTimestamp).toISOString()}`);
+            console.log(`[${new Date().toISOString()}] Server ${id}: No traffic reset needed yet. Current lastReset: ${new Date(lastResetTimestamp).toISOString()}`);
         }
     });
 
