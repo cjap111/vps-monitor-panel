@@ -185,23 +185,23 @@ EOF
     fi
     EMAIL="$EMAIL_TO_USE" # Set global EMAIL for the script to use
 
-    # Attempt account registration if not already registered.
-    # We remove --update-registration as it might not be supported on older Certbot versions.
+    # Attempt account registration.
     echo "--> 尝试注册Certbot账户 (如果尚未注册)..."
-    # The 'register' command with --non-interactive might exit 1 if account already exists.
-    # We check if it already exists before trying to register.
-    if ! sudo certbot accounts | grep -q "$EMAIL"; then
-        if ! sudo certbot register --email "$EMAIL" --agree-tos --non-interactive --no-eff-email; then
-            echo -e "${RED}错误：Certbot账户注册失败。请检查您的邮箱地址或网络连接。${NC}"
-            echo -e "如果问题持续存在，请访问Let's Encrypt社区获取帮助。"
-            exit 1
-        else
-            echo -e "${GREEN}Certbot账户注册成功！${NC}"
-        fi
-    else
-        echo -e "${GREEN}Certbot账户已存在，继续。${NC}"
-    fi
+    # Capture output and exit code of certbot register command
+    REGISTER_OUTPUT=$(sudo certbot register --email "$EMAIL" --agree-tos --non-interactive --no-eff-email 2>&1)
+    REGISTER_STATUS=$?
 
+    if [ $REGISTER_STATUS -eq 0 ]; then
+        echo -e "${GREEN}Certbot账户注册/更新成功！${NC}"
+    elif echo "$REGISTER_OUTPUT" | grep -q "There is an existing account"; then
+        # Handle the case where the account already exists, which is not an error for our purpose.
+        echo -e "${GREEN}Certbot账户已存在，继续。${NC}"
+    else
+        echo -e "${RED}错误：Certbot账户注册失败。${NC}"
+        echo -e "${RED}详细错误信息：${REGISTER_OUTPUT}${NC}"
+        echo -e "如果问题持续存在，请访问Let's Encrypt社区获取帮助。"
+        exit 1
+    fi
 
     # Now, attempt to obtain or renew the certificate, or skip if valid one already exists
     # Check if certificate already exists and is VALID for the domain
