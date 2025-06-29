@@ -125,20 +125,23 @@ app.post('/api/report', (req, res) => {
     let upBytesSinceLast = 0;
     let downBytesSinceLast = 0;
 
+    // Handle raw counter reset for upload
     if (data.rawTotalNet.up < existingData.rawTotalNet.up) {
-        console.warn(`[${new Date().toISOString()}] Server ${data.id}: Upload raw counter reset detected.`);
-        upBytesSinceLast = data.rawTotalNet.up;
+        console.warn(`[${new Date().toISOString()}] Server ${data.id}: Upload raw counter reset detected. Assuming reset to zero.`);
+        upBytesSinceLast = data.rawTotalNet.up; // Start counting from new raw value
     } else {
         upBytesSinceLast = data.rawTotalNet.up - existingData.rawTotalNet.up;
     }
 
+    // Handle raw counter reset for download
     if (data.rawTotalNet.down < existingData.rawTotalNet.down) {
-        console.warn(`[${new Date().toISOString()}] Server ${data.id}: Download raw counter reset detected.`);
-        downBytesSinceLast = data.rawTotalNet.down;
+        console.warn(`[${new Date().toISOString()}] Server ${data.id}: Download raw counter reset detected. Assuming reset to zero.`);
+        downBytesSinceLast = data.rawTotalNet.down; // Start counting from new raw value
     } else {
         downBytesSinceLast = data.rawTotalNet.down - existingData.rawTotalNet.down;
     }
 
+    // Ensure values are not negative
     upBytesSinceLast = Math.max(0, upBytesSinceLast);
     downBytesSinceLast = Math.max(0, downBytesSinceLast);
 
