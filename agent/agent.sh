@@ -98,7 +98,7 @@ JSON_PAYLOAD=$(cat <<EOF
   "disk": { "total": $DISK_TOTAL, "used": $DISK_USED },
   "diskModel": "$DISK_MODEL",
   "net": { "up": $NET_UP_BPS, "down": $NET_DOWN_BPS },
-  "rawTotalNet": { "up": $RAW_TOTAL_NET_UP, "down": $RAW_TOTAL_NET_UP },
+  "rawTotalNet": { "up": $RAW_TOTAL_NET_UP, "down": $RAW_TOTAL_NET_DOWN },
   "systemUptime": $SYSTEM_UPTIME_SECONDS
 }
 EOF
